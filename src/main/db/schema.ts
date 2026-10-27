@@ -29,6 +29,7 @@ export const DATA_TABLES = [
   'edit_batch',
   'payout_period',
   'payout_statement',
+  'opening_balance',
 ] as const;
 export type DataTable = (typeof DATA_TABLES)[number];
 
@@ -348,6 +349,21 @@ const M007 = `
 ALTER TABLE contract ADD COLUMN terms_json TEXT;
 `;
 
+// M008: входящие остатки по выплатам, перенесённые из прежнего учёта. Живут на артисте/человеке, в расчёт входят как «перенос с прошлых» первого квартала.
+const M008 = `
+CREATE TABLE opening_balance (
+  id TEXT PRIMARY KEY,
+  quarter TEXT NOT NULL,
+  artist_id TEXT REFERENCES artist(id),
+  counterparty_id TEXT REFERENCES counterparty(id),
+  source_name TEXT NOT NULL,
+  amount_kop INTEGER NOT NULL,
+  note TEXT,
+  ${STD}
+);
+CREATE INDEX ix_opening_quarter ON opening_balance(quarter);
+`;
+
 export const MIGRATIONS: Array<{ version: number; sql: string }> = [
   { version: 1, sql: M001 },
   { version: 2, sql: M002 },
@@ -356,6 +372,7 @@ export const MIGRATIONS: Array<{ version: number; sql: string }> = [
   { version: 5, sql: M005 },
   { version: 6, sql: M006 },
   { version: 7, sql: M007 },
+  { version: 8, sql: M008 },
 ];
 
 export function currentVersion(db: Db): number {

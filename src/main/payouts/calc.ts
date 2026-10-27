@@ -41,7 +41,7 @@ export interface AccrualRow {
 }
 
 export interface Problem {
-  kind: 'no_track' | 'no_participation' | 'no_rate' | 'no_payee' | 'mixed_share_mismatch' | 'no_contract' | 'no_threshold_contract';
+  kind: 'no_track' | 'no_participation' | 'no_rate' | 'no_payee' | 'mixed_share_mismatch' | 'no_contract' | 'no_threshold_contract' | 'opening_unassigned';
   text: string;
   rows: number;
   royaltyKop: number;
@@ -174,6 +174,15 @@ export function computeAccruals(db: Db, quarter: string): { rows: AccrualRow[]; 
   return { rows, problems: [...probs.values()], flowRoyaltyKop: flowRoyalty, allocatedKop: allocated };
 }
 
+/** Входящие остатки квартала: получатель = человек остатка или человек, к которому сейчас привязан артист. */
+export function openingFor(db: Db, quarter: string): Array<{ id: string; name: string; kop: number; payeeId: string | null }> {
+  return db.prepare(
+    `SELECT o.id, o.source_name, o.amount_kop, ifnull(o.counterparty_id, a.counterparty_id) AS payee
+       FROM opening_balance o LEFT JOIN artist a ON a.id = o.artist_id AND a.deleted_at IS NULL
+      WHERE o.quarter = ? AND o.deleted_at IS NULL AND o.amount_kop <> 0`,
+  ).all(quarter).map((r) => ({ id: String(r.id), name: String(r.source_name), kop: Number(r.amount_kop), payeeId: r.payee ? String(r.payee) : null }));
+}
+
 function prevQuarter(db: Db, quarter: string): string | null {
   const r = db.prepare("SELECT max(quarter) AS q FROM report WHERE quarter < ? AND deleted_at IS NULL AND flow = 'artists'").get(quarter);
   return r?.q ?? null;
@@ -212,18 +221,32 @@ export function computeQuarter(db: Db, quarter: string, mode: RoundMode = 'down'
 
   const cps = new Map<string, { last_name: string; first_name: string; middle_name: string }>();
   for (const c of db.prepare('SELECT * FROM counterparty').all()) cps.set(c.id, { last_name: c.last_name, first_name: c.first_name, middle_name: c.middle_name });
-  const contracts = new Map<string, { number: string; date: string | null; threshold: number | null; rule: string | null }>();
-  for (const c of db.prepare('SELECT * FROM contract').all()) contracts.set(c.id, { number: c.number, date: c.date, threshold: c.threshold_rub, rule: c.threshold_rule });
+  const contracts = new Map<string, { number: string; date: string | null; threshold: number | null; rule: string | null; cpId: string }>();
+  for (const c of db.prepare('SELECT * FROM contract').all()) contracts.set(c.id, { number: c.number, date: c.date, threshold: c.threshold_rub, rule: c.threshold_rule, cpId: c.counterparty_id });
 
   const groups: GroupCalc[] = [];
   const raw = groupRows(rows);
   // получатели, у которых что-то перенесено с прошлых кварталов, но в этом начислений нет
   for (const [k, pg] of prevByKey) if (pg.carriedOutKop > 0 && !raw.some((g) => g.key === k)) raw.push({ key: k, payeeId: pg.payeeId, contractId: pg.contractId, scaled: 0n, attr: 0n, qty: 0, rows: [] });
+  // входящие остатки из прежнего учёта: считаются на человека, входят в «перенос» этого квартала и в проверку порога
+  const openProblems: Problem[] = [];
+  const openByKey = new Map<string, number>();
+  for (const ob of openingFor(db, quarter)) {
+    if (!ob.payeeId) { openProblems.push({ kind: 'opening_unassigned', text: `Входящий остаток «${ob.name}» ${(ob.kop / 100).toFixed(2)} ₽ не привязан к человеку — не попадёт в выплаты`, rows: 0, royaltyKop: 0 }); continue; }
+    let g = raw.find((x) => x.payeeId === ob.payeeId && x.contractId) ?? raw.find((x) => x.payeeId === ob.payeeId);
+    if (!g) {
+      const own = [...contracts].filter(([, c]) => c.cpId === ob.payeeId).map(([id]) => id);
+      const cid = own.length === 1 ? own[0]! : null;
+      g = { key: `${ob.payeeId}|${cid ?? ''}`, payeeId: ob.payeeId, contractId: cid, scaled: 0n, attr: 0n, qty: 0, rows: [] };
+      raw.push(g);
+    }
+    openByKey.set(g.key, (openByKey.get(g.key) ?? 0) + ob.kop);
+  }
 
   for (const g of raw) {
     const accrued = roundDiv(g.scaled, SCALE4, mode);
     const attrKop = Number(floorDiv(g.attr, DEC_ONE * DEC_ONE));
-    const carriedIn = prevByKey.get(g.key)?.carriedOutKop ?? 0;
+    const carriedIn = (prevByKey.get(g.key)?.carriedOutKop ?? 0) + (openByKey.get(g.key) ?? 0);
     const con = g.contractId ? contracts.get(g.contractId) : undefined;
     const threshold = con?.threshold ?? null;
     const total = accrued + carriedIn;
@@ -264,7 +287,7 @@ export function computeQuarter(db: Db, quarter: string, mode: RoundMode = 'down'
   return {
     quarter,
     groups,
-    problems: [...problems, ...extra],
+    problems: [...problems, ...openProblems, ...extra],
     totals: {
       flowRoyaltyKop, allocatedKop, unallocatedKop: flowRoyaltyKop - allocatedKop, accruedKop: accruedAll,
       payableKop: groups.reduce((a, g) => a + g.payableKop, 0), marginKop: allocatedKop - accruedAll,

@@ -9,6 +9,7 @@ import type { QuarterPanel, ReportListItem } from '../main/reports/queries.ts';
 import type { Flow, StreamKind } from '../main/reports/types.ts';
 import type { GroupCalc, Problem, QuarterCalc } from '../main/payouts/calc.ts';
 import type { PayoutRow, PayoutsView, StatementInfo } from '../main/payouts/store.ts';
+import type { OpeningItem, OpeningListItem, OpeningMatch, OpeningParsedRow } from '../main/payouts/opening.ts';
 import type { VersionItem } from '../main/reports/replace.ts';
 import type { BatchItem, BulkAction, BulkPlan } from '../main/reports/bulk.ts';
 import type { UiField } from '../main/reports/edits.ts';
@@ -133,6 +134,11 @@ export interface ChannelMap {
   'payouts:mark': [{ quarter: string; groupKey: string; status: 'draft' | 'ready' | 'paid'; paidKop?: number | null; paidDate?: string | null }, void];
   'payouts:generate': [{ quarter: string; groupKeys: string[]; city?: string; date?: string; round?: 'down' | 'up' | 'nearest' }, GenerateResult[]];
   'payouts:deleteStatement': [{ quarter: string; groupKey: string }, { versionNo: number; files: number }];
+  'opening:pick': [void, OpeningPreview | null];
+  'opening:commit': [{ quarter: string; items: OpeningItem[] }, { saved: number; replaced: number; totalKop: number }];
+  'opening:list': [void, OpeningListItem[]];
+  'opening:update': [{ id: string; artistId?: string | null; kop?: number }, void];
+  'opening:delete': [{ id: string }, void];
   'payouts:open': [{ path: string }, void];
   'contracts:list': [void, ContractListItem[]];
   'contracts:missing': [void, Array<{ id: string; person: string; status: string }>];
@@ -206,4 +212,9 @@ export type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string };
 export interface RlBridge {
   invoke(channel: string, req?: unknown): Promise<IpcResult<unknown>>;
   onLocked(cb: () => void): () => void;
+}
+
+export interface OpeningPreview {
+  fileName: string; sheet: string; quarterGuess: string | null; quarters: string[]; totalKop: number; existing: number;
+  rows: Array<OpeningParsedRow & { match: OpeningMatch }>;
 }

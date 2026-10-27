@@ -7,9 +7,10 @@ import type { ApplyResult, ChannelMap, GenerateResult, ImportItem, WizardInfo } 
 import { backupDb } from './db/backup.ts';
 import { insertRow, updateRow } from './db/mutate.ts';
 import { uuidv7 } from './domain/ids.ts';
+import { commitOpening, deleteOpening, listOpening, matchOpeningName, parseOpeningXlsx, updateOpening } from './payouts/opening.ts';
 import { generateStatement } from './payouts/generate.ts';
 import { htmlToPdf } from './payouts/pdfRender.ts';
-import { deleteLatestStatement, markPaid, payoutsView } from './payouts/store.ts';
+import { deleteLatestStatement, markPaid, payoutQuarters, payoutsView } from './payouts/store.ts';
 import { applyBulk, listBatches, planBulk, revertBatch } from './reports/bulk.ts';
 import { editLine, revertLine, splitLine } from './reports/edits.ts';
 import { lineFacets, lineHistory, queryLines } from './reports/lines.ts';
@@ -213,6 +214,25 @@ export function registerReportsIpc(handle: HandleFn, getWindow: () => BrowserWin
     backupDb(s.db, s.open.file, s.paths.backups, 'before-delete-statement');
     return deleteLatestStatement(s.db, s.ctx, s.paths.output, quarter, groupKey);
   });
+  handle('opening:pick', async () => {
+    const s = requireSession();
+    const win = getWindow();
+    const opts = { title: 'Входящие остатки (Excel)', properties: ['openFile' as const], filters: [{ name: 'Excel', extensions: ['xlsx'] }] };
+    const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
+    if (res.canceled || !res.filePaths[0]) return null;
+    const f = res.filePaths[0];
+    const parsed = parseOpeningXlsx(readXlsxBuffer(readFileSync(f), basename(f)));
+    const existing = Number(s.db.prepare("SELECT count(*) AS n FROM opening_balance WHERE deleted_at IS NULL AND note = 'import'").get()?.n ?? 0);
+    return { fileName: basename(f), sheet: parsed.sheet, quarterGuess: parsed.quarterGuess, quarters: payoutQuarters(s.db), totalKop: parsed.totalKop, existing, rows: parsed.rows.map((r) => ({ ...r, match: matchOpeningName(s.db, r.name) })) };
+  });
+  handle('opening:commit', ({ quarter, items }) => {
+    const s = requireSession();
+    backupDb(s.db, s.open.file, s.paths.backups, 'before-opening-balances');
+    return commitOpening(s.db, s.ctx, quarter, items);
+  });
+  handle('opening:list', () => listOpening(requireSession().db));
+  handle('opening:update', ({ id, artistId, kop }) => { const s = requireSession(); updateOpening(s.db, s.ctx, id, { artistId, kop }); });
+  handle('opening:delete', ({ id }) => { const s = requireSession(); deleteOpening(s.db, s.ctx, id); });
   handle('payouts:open', async ({ path }) => {
     const s = requireSession();
     const root = resolve(s.paths.output);

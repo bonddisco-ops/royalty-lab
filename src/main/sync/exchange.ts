@@ -111,7 +111,7 @@ export interface Change { eventId: string; field: string | null; was: string | n
 export interface Group { key: string; table: string; rowId: string; title: string; kind: 'insert' | 'update' | 'delete'; users: string[]; from: string; to: string; changes: Change[] }
 export interface UpdatePreview { author: string; ts: string; includePii: boolean; total: number; fresh: number; groups: Group[]; conflicts: number; reports: Array<{ label: string; lines: number; rowsKop: number }> }
 
-const TABLE_RU: Record<string, string> = { counterparty: 'Человек', artist: 'Артист', track: 'Трек', participation: 'Участие в треке', contract: 'Договор', appendix: 'Приложение', appendix_item: 'Строка приложения', report: 'Отчёт', report_version: 'Версия отчёта', line_edit: 'Правка строки', line_split: 'Разделение строки', payout_period: 'Выплата', payout_statement: 'Ведомость', issue: 'Проверка', settings: 'Настройка', distributor: 'Дистрибьютор', track_identifier: 'Идентификатор трека', artist_name_variant: 'Вариант имени', edit_batch: 'Пакет правок', report_payment: 'Поступление', contract_template: 'Шаблон', import_format: 'Формат' };
+const TABLE_RU: Record<string, string> = { counterparty: 'Человек', artist: 'Артист', track: 'Трек', participation: 'Участие в треке', contract: 'Договор', appendix: 'Приложение', appendix_item: 'Строка приложения', report: 'Отчёт', report_version: 'Версия отчёта', line_edit: 'Правка строки', line_split: 'Разделение строки', payout_period: 'Выплата', payout_statement: 'Ведомость', issue: 'Проверка', settings: 'Настройка', distributor: 'Дистрибьютор', track_identifier: 'Идентификатор трека', artist_name_variant: 'Вариант имени', edit_batch: 'Пакет правок', report_payment: 'Поступление', contract_template: 'Шаблон', import_format: 'Формат', opening_balance: 'Входящий остаток' };
 
 function rowTitle(db: Db, table: string, id: string, evs: Ev[]): string {
   const ins = evs.find((e) => e.op === 'insert');
@@ -122,6 +122,7 @@ function rowTitle(db: Db, table: string, id: string, evs: Ev[]): string {
   else if (table === 'track') t = String(snap.title ?? '');
   else if (table === 'contract') t = String(snap.number ?? '');
   else if (table === 'settings') t = id;
+  else if (table === 'opening_balance') t = String(snap.source_name ?? '');
   else if (table === 'payout_period') t = String(snap.quarter ?? '');
   else if (table === 'report') t = String(snap.quarter ?? '');
   return `${TABLE_RU[table] ?? table}${t ? `: ${t}` : ` ${id.slice(-6)}`}`;
