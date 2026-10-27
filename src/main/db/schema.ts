@@ -20,6 +20,10 @@ export const DATA_TABLES = [
   'appendix_item',
   'distributor',
   'issue',
+  'import_format',
+  'report',
+  'report_version',
+  'report_payment',
 ] as const;
 export type DataTable = (typeof DATA_TABLES)[number];
 
@@ -179,9 +183,84 @@ ALTER TABLE artist ADD COLUMN photo_file TEXT;
 ALTER TABLE track ADD COLUMN cover_file TEXT;
 `;
 
+// M003 (этап 2, Схема_БД §6): отчёты дистрибьюторов.
+// statement_line — не таблица данных: строки выводятся из файла отчёта, поэтому пишутся пачкой мимо mutate()/change_log,
+// а при обмене между установками едет сам файл отчёта (его строки пересоздаются у получателя).
+const M003 = `
+CREATE TABLE import_format (
+  id TEXT PRIMARY KEY,
+  distributor_id TEXT REFERENCES distributor(id),
+  name TEXT,
+  fingerprint_json TEXT NOT NULL,
+  mapping_json TEXT NOT NULL,
+  ${STD}
+);
+
+CREATE TABLE report (
+  id TEXT PRIMARY KEY,
+  distributor_id TEXT NOT NULL REFERENCES distributor(id),
+  quarter TEXT NOT NULL,
+  rights_scope TEXT NOT NULL CHECK (rights_scope IN ('authors','related','mixed')),
+  flow TEXT NOT NULL CHECK (flow IN ('artists','personal','ignore')),
+  current_version_id TEXT,
+  notes TEXT,
+  ${STD}
+);
+CREATE UNIQUE INDEX ux_report ON report(distributor_id, quarter, rights_scope) WHERE deleted_at IS NULL;
+
+CREATE TABLE report_version (
+  id TEXT PRIMARY KEY,
+  report_id TEXT NOT NULL REFERENCES report(id),
+  version_no INTEGER NOT NULL,
+  file_path TEXT,
+  file_sha256 TEXT NOT NULL,
+  imported_at TEXT NOT NULL,
+  imported_by TEXT,
+  period_from TEXT, period_to TEXT,
+  header_json TEXT,
+  total_footer_kop INTEGER,
+  total_rows_kop INTEGER NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('active','superseded')),
+  ${STD}
+);
+CREATE UNIQUE INDEX ux_report_version_sha ON report_version(file_sha256) WHERE deleted_at IS NULL;
+CREATE INDEX ix_report_version_report ON report_version(report_id);
+
+CREATE TABLE report_payment (
+  id TEXT PRIMARY KEY,
+  report_id TEXT NOT NULL REFERENCES report(id),
+  paid_date TEXT NOT NULL,
+  amount_kop INTEGER NOT NULL,
+  note TEXT,
+  ${STD}
+);
+
+CREATE TABLE statement_line (
+  id TEXT PRIMARY KEY,
+  report_version_id TEXT NOT NULL REFERENCES report_version(id),
+  row_key TEXT NOT NULL,
+  rights_type TEXT NOT NULL CHECK (rights_type IN ('authors','related','mixed')),
+  track_id TEXT REFERENCES track(id),
+  artist_raw TEXT, title_raw TEXT, isrc_raw TEXT, upc_raw TEXT, code_raw TEXT,
+  platform TEXT, usage_type TEXT, usage_model TEXT,
+  stream_kind TEXT NOT NULL CHECK (stream_kind IN ('paid','ad','other','nonstream')),
+  country TEXT, period_month TEXT,
+  qty INTEGER NOT NULL,
+  royalty_kop INTEGER NOT NULL,
+  currency_orig TEXT, amount_orig REAL,
+  raw_json TEXT
+);
+CREATE INDEX ix_line_version ON statement_line(report_version_id);
+CREATE INDEX ix_line_track ON statement_line(track_id);
+CREATE INDEX ix_line_key ON statement_line(row_key);
+CREATE INDEX ix_line_platform ON statement_line(platform);
+CREATE INDEX ix_line_usage ON statement_line(usage_type);
+`;
+
 export const MIGRATIONS: Array<{ version: number; sql: string }> = [
   { version: 1, sql: M001 },
   { version: 2, sql: M002 },
+  { version: 3, sql: M003 },
 ];
 
 export function currentVersion(db: Db): number {
