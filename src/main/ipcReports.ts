@@ -7,6 +7,7 @@ import type { ApplyResult, ChannelMap, GenerateResult, ImportItem, WizardInfo } 
 import { backupDb } from './db/backup.ts';
 import { insertRow, updateRow } from './db/mutate.ts';
 import { uuidv7 } from './domain/ids.ts';
+import { computeQuarter } from './payouts/calc.ts';
 import { commitOpening, deleteOpening, listOpening, matchOpeningName, parseOpeningXlsx, updateOpening } from './payouts/opening.ts';
 import { addPayment, addReceipt, deletePayment, deleteReceipt, setParams, taxCsv, taxView } from './tax/store.ts';
 import { generateStatement } from './payouts/generate.ts';
@@ -159,7 +160,15 @@ export function registerReportsIpc(handle: HandleFn, getWindow: () => BrowserWin
   });
 
   // ------------------------------------------------ таблица строк и правки (этап 3)
-  handle('lines:query', ({ filter, sort, offset, limit }) => queryLines(requireSession().db, filter, sort, offset ?? 0, Math.min(limit ?? 200, 500)));
+  handle('lines:query', ({ filter, sort, offset, limit }) => {
+    const db = requireSession().db;
+    const page = queryLines(db, filter, sort, offset ?? 0, Math.min(limit ?? 200, 500));
+    if (filter.person && filter.person !== '__none' && filter.quarter) {
+      const g = computeQuarter(db, filter.quarter).groups.filter((x) => x.payeeId === filter.person);
+      page.personAccruedKop = g.reduce((a, x) => a + x.accruedKop, 0);
+    }
+    return page;
+  });
   handle('lines:history', ({ lineId }) => lineHistory(requireSession().db, lineId));
   handle('lines:facets', ({ quarter }) => lineFacets(requireSession().db, quarter));
   handle('lines:edit', ({ lineId, field, value, splitId }) => {

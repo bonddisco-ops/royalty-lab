@@ -1,5 +1,6 @@
 // Таблица строк: эффективные строки по отчётам квартала, фильтры, сортировка, страницы.
 import type { Db } from '../db/types.ts';
+import { formatDec, parseDec } from '../domain/dec.ts';
 import { effectivePieces, rateToRubString, type BaseLine, type EditRec, type EffPiece, type SplitRec } from './effective.ts';
 import type { StreamKind } from './types.ts';
 
@@ -41,7 +42,11 @@ export interface LineRow {
   /** Кто и когда последним правил строку (для подсказки). */
   lastEditBy: string | null;
   lastEditAt: string | null;
+  /** Кому пойдёт доля с этой строки (по участникам трека); заполняется только для строк, отданных в таблицу. */
+  payees?: LinePayee[];
 }
+
+export interface LinePayee { personId: string | null; name: string; artist: string; sharePct: string }
 
 export interface LineFilter {
   quarter?: string;
@@ -57,6 +62,8 @@ export interface LineFilter {
   streamKind?: string[];
   edited?: boolean;
   unmatched?: boolean;
+  /** id человека-получателя или '__none' — строки, у которых нет трека или у участника нет человека. */
+  person?: string;
 }
 
 export type SortKey = 'distributor' | 'artist' | 'title' | 'platform' | 'usage' | 'country' | 'month' | 'qty' | 'royalty' | 'rate' | 'streamKind';
@@ -66,6 +73,8 @@ export interface LinePage {
   rows: LineRow[];
   total: number;
   totals: { qty: number; royaltyKop: number; origRoyaltyKop: number; edited: number };
+  /** Сколько по расчёту выплат начислено выбранному человеку за квартал (когда включён фильтр по человеку). */
+  personAccruedKop?: number | null;
 }
 
 export interface LineSrc { base: BaseLine; edits: EditRec[]; splits: SplitRec[]; pieces: EffPiece[] }
@@ -177,9 +186,39 @@ export function matchesFilter(r: LineRow, f: LineFilter): boolean {
   return true;
 }
 
+interface PartInfo { personId: string | null; name: string; artist: string; sa: string; sr: string }
+function partsByTrack(db: Db): Map<string, PartInfo[]> {
+  const m = new Map<string, PartInfo[]>();
+  const rows = db.prepare(
+    `SELECT p.track_id, a.name AS artist, p.share_authors AS sa, p.share_related AS sr, c.id AS pid, c.last_name, c.first_name, c.middle_name
+       FROM participation p JOIN artist a ON a.id = p.artist_id AND a.deleted_at IS NULL
+       LEFT JOIN counterparty c ON c.id = ifnull(p.payee_counterparty_id, a.counterparty_id) AND c.deleted_at IS NULL
+      WHERE p.deleted_at IS NULL ORDER BY a.name`,
+  ).all();
+  for (const r of rows) {
+    const ini = (x: unknown): string => (x ? `${String(x)[0]}.` : '');
+    const name = r.pid ? `${r.last_name ?? ''} ${ini(r.first_name)}${ini(r.middle_name)}`.trim() : '';
+    const a = m.get(r.track_id) ?? [];
+    a.push({ personId: r.pid ?? null, name, artist: r.artist, sa: r.sa, sr: r.sr });
+    m.set(r.track_id, a);
+  }
+  return m;
+}
+const shareFor = (rights: string, p: PartInfo): string => (rights === 'authors' ? p.sa : p.sr);
+const pctText = (share: string): string => {
+  const v = parseDec(share);
+  return v === null ? '' : `${formatDec(v * 100n).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')}%`;
+};
+function matchesPerson(r: LineRow, person: string, parts: Map<string, PartInfo[]>): boolean {
+  const ps = r.trackId ? parts.get(r.trackId) ?? [] : [];
+  if (person === '__none') return ps.length === 0 || ps.some((p) => !p.personId);
+  return ps.some((p) => p.personId === person);
+}
+
 export function filteredLines(db: Db, f: LineFilter): LineRow[] {
   const out: LineRow[] = [];
-  for (const id of currentVersionIds(db, f)) for (const r of loadVersion(db, id)) if (matchesFilter(r, f)) out.push(r);
+  const parts = f.person ? partsByTrack(db) : null;
+  for (const id of currentVersionIds(db, f)) for (const r of loadVersion(db, id)) if (matchesFilter(r, f) && (!parts || matchesPerson(r, f.person!, parts))) out.push(r);
   return out;
 }
 
@@ -199,7 +238,12 @@ export function queryLines(db: Db, f: LineFilter, sort: LineSort = { key: 'royal
   });
   let qty = 0, roy = 0, orig = 0, edited = 0;
   for (const r of all) { qty += r.qty; roy += r.royaltyKop; orig += r.origRoyaltyKop; if (r.changed.length > 0) edited++; }
-  return { rows: sorted.slice(offset, offset + limit), total: all.length, totals: { qty, royaltyKop: roy, origRoyaltyKop: orig, edited } };
+  const parts = partsByTrack(db);
+  const page = sorted.slice(offset, offset + limit).map((r) => ({
+    ...r,
+    payees: (r.trackId ? parts.get(r.trackId) ?? [] : []).map((p) => ({ personId: p.personId, name: p.name, artist: p.artist, sharePct: pctText(shareFor(r.rights, p)) })),
+  }));
+  return { rows: page, total: all.length, totals: { qty, royaltyKop: roy, origRoyaltyKop: orig, edited } };
 }
 
 export interface Facets {

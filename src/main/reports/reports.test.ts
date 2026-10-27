@@ -278,3 +278,25 @@ test('недостающие треки создаются сами: артис�
   assert.equal(db.prepare("SELECT count(*) n FROM issue WHERE kind = 'unmatched_track' AND status = 'open'").get()!.n, 0);
   assert.equal(db.prepare('SELECT count(*) n FROM statement_line WHERE track_id IS NULL').get()!.n, 0);
 });
+
+test('строки: фильтр по человеку-получателю, «без получателя», доли коллаба в колонке', async () => {
+  const { insertRow: ins, updateRow: upd } = await import('../db/mutate.ts');
+  const { queryLines: ql } = await import('./lines.ts');
+  const db = freshDb();
+  const p1 = ins(db, ctx, 'counterparty', { last_name: 'Брянский', first_name: 'Андрей', middle_name: 'Николаевич', status: 'ip' });
+  const a1 = ins(db, ctx, 'artist', { name: 'Shtain', counterparty_id: p1 });
+  const a2 = ins(db, ctx, 'artist', { name: 'DJ Harvie', counterparty_id: null });
+  const t = ins(db, ctx, 'track', { title: 'Cold Heart', isrc: 'RUA1D2588339' });
+  ins(db, ctx, 'participation', { track_id: t, artist_id: a1, share_authors: '0.5', share_related: '0.5', label_rate: '0.7' });
+  ins(db, ctx, 'participation', { track_id: t, artist_id: a2, share_authors: '0.5', share_related: '0.5', label_rate: '0.7' });
+  commitImport(db, ctx, { parsed: parseKnown(spDigital('related', [spRelRow('RUA1D2588339', 'Cold Heart', 'DJ Harvie, Shtain', 'YouTube', 36, 1000, 1000)], [1000, 1000])), fileName: 'p.xlsx', fileSha: sha256Hex(Buffer.from('p1')), flow: 'artists', quarter: '2026Q2' });
+  const mine = ql(db, { quarter: '2026Q2', person: p1 });
+  assert.equal(mine.total, 1);
+  const pay = mine.rows[0]!.payees!;
+  assert.deepEqual(pay.map((x) => [x.artist, x.sharePct, !!x.personId]), [['DJ Harvie', '50%', false], ['Shtain', '50%', true]]);
+  assert.equal(pay[1]!.name, 'Брянский А.Н.');
+  assert.equal(ql(db, { quarter: '2026Q2', person: '__none' }).total, 1, 'у DJ Harvie нет человека');
+  upd(db, ctx, 'artist', a2, { counterparty_id: p1 });
+  assert.equal(ql(db, { quarter: '2026Q2', person: '__none' }).total, 0);
+  assert.equal(ql(db, { quarter: '2026Q2', person: 'нет-такого' }).total, 0);
+});

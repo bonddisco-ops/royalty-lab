@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Facets, LineHistory, LineFilter, LinePage, LineRow, LineSort, StreamKind, UiField } from '../../../shared/api.ts';
+import type { Facets, LineHistory, PersonListItem, LineFilter, LinePage, LineRow, LineSort, StreamKind, UiField } from '../../../shared/api.ts';
 import { call } from '../api.ts';
+import { useNav } from '../nav.tsx';
+import { SearchSelect } from '../SearchSelect.tsx';
 import { RIGHTS_SHORT, STREAM_SHORT, fmtInt, fmtKop, kopToInput, quarterLabel } from '../util.ts';
 import { BulkDialog, HistoryDialog } from './LinesBulk.tsx';
 
@@ -68,13 +70,16 @@ function EditCell({ text, initial, editable, numeric, options, orig, changed, on
 }
 
 const COLS: Array<{ key: LineSort['key'] | null; title: string; num?: boolean }> = [
-  { key: 'distributor', title: 'Дистрибьютор' }, { key: null, title: 'Права' }, { key: 'artist', title: 'Артист' }, { key: 'title', title: 'Трек' }, { key: null, title: 'ISRC / код' },
+  { key: 'distributor', title: 'Дистрибьютор' }, { key: null, title: 'Права' }, { key: 'artist', title: 'Артист' }, { key: 'title', title: 'Трек' }, { key: null, title: 'Получатель' }, { key: null, title: 'ISRC / код' },
   { key: 'platform', title: 'Площадка' }, { key: 'usage', title: 'Вид использования' }, { key: null, title: 'Способ' }, { key: 'country', title: 'Страна' }, { key: 'month', title: 'Месяц' },
   { key: 'qty', title: 'Тираж', num: true }, { key: 'royalty', title: 'Роялти', num: true }, { key: 'rate', title: 'Ставка за прослуш.', num: true }, { key: 'streamKind', title: 'Тип стрима' }, { key: null, title: '' },
 ];
 const EMPTY: LineFilter = {};
 
 export function Lines({ onChanged }: { onChanged: () => void }) {
+  const nav = useNav();
+  const [people, setPeople] = useState<PersonListItem[]>([]);
+  useEffect(() => { void call('people:list', {}).then(setPeople); }, []);
   const [quarters, setQuarters] = useState<string[]>([]);
   const [quarter, setQuarter] = useState<string | undefined>(undefined);
   const [facets, setFacets] = useState<Facets | null>(null);
@@ -124,6 +129,7 @@ export function Lines({ onChanged }: { onChanged: () => void }) {
         {facets && FACET_TITLES.map(([k, title]) => (
           <MultiFilter key={k} title={title} options={facets[k]} value={(f[k] as string[] | undefined) ?? []} label={(v) => facetLabel(k, v)} onChange={(v) => setFilter({ [k]: v } as Partial<LineFilter>)} />
         ))}
+        <SearchSelect width={250} options={[{ value: '__none', label: '⚠ Без получателя (нет человека или трека)' }, ...people.map((p) => ({ value: p.id, label: p.display, hint: p.artists.join(', ') }))]} value={f.person ?? ''} empty="Все получатели" onChange={(v) => setFilter({ person: v || undefined })} />
         <label className="row" style={{ gap: 4 }}><input type="checkbox" style={{ width: 'auto' }} checked={!!f.edited} onChange={(e) => setFilter({ edited: e.target.checked })} />Изменённые</label>
         <label className="row" style={{ gap: 4 }}><input type="checkbox" style={{ width: 'auto' }} checked={!!f.unmatched} onChange={(e) => setFilter({ unmatched: e.target.checked })} />Без трека</label>
         {active && <button className="link" onClick={() => { setF(EMPTY); setOffset(0); }}>сбросить всё</button>}
@@ -133,6 +139,7 @@ export function Lines({ onChanged }: { onChanged: () => void }) {
         <div className="dim" style={{ marginBottom: 8 }}>
           Строк: <b>{fmtInt(page.total)}</b> · тираж {fmtInt(page.totals.qty)} · роялти <b>{fmtKop(page.totals.royaltyKop)}</b>
           {page.totals.edited > 0 && <> · изменено строк: {fmtInt(page.totals.edited)}{delta !== 0 && <>, разница {delta > 0 ? '+' : ''}{fmtKop(delta)}</>}</>}
+          {page.personAccruedKop != null && <> · начислено этому человеку по расчёту выплат: <b>{fmtKop(page.personAccruedKop)}</b> <button className="link" onClick={() => nav.go('payouts', {})}>к выплатам →</button></>}
           {' · '}двойной щелчок по ячейке — правка
         </div>
       )}
@@ -153,7 +160,12 @@ export function Lines({ onChanged }: { onChanged: () => void }) {
             return (
               <tr key={r.key} style={moved ? { background: '#7fb56b14' } : undefined} title={r.changed.length > 0 ? `Строка изменена${r.lastEditBy ? `: ${r.lastEditBy}` : ''}${r.lastEditAt ? `, ${new Date(r.lastEditAt).toLocaleString('ru-RU')}` : ''}. Исходные значения — в ячейках «было» и в истории (🕘)` : undefined}>
                 <td>{r.distributor}</td><td className="dim">{RIGHTS_SHORT[r.rights]}</td><td>{r.artist}</td>
-                <td>{r.title}{moved && <span className="badge ok" title="Перенесённая часть">перенос</span>}{!r.trackId && <span className="badge bad" title="Трек не найден в каталоге">нет трека</span>}</td>
+                <td>{r.title}{moved && <span className="badge ok" title="Перенесённая часть">перенос</span>}{!r.trackId && <button className="badge bad" title="Трек не найден в каталоге — привязать в «Проверить»" onClick={() => nav.go('issues', { issueKind: 'unmatched_track' })}>нет трека</button>}</td>
+                <td>{(r.payees ?? []).map((p, i) => (
+                  <div key={i} style={{ whiteSpace: 'nowrap' }}>
+                    {p.personId ? <button className="link" style={{ padding: 0 }} title="Показать только строки этого человека" onClick={() => setFilter({ person: p.personId! })}>{p.name}</button> : <button className="badge bad" title={`У артиста «${p.artist}» нет человека — привязать`} onClick={() => nav.go('artists', { query: p.artist })}>{p.artist}: нет человека</button>}
+                    {p.sharePct && <span className="dim"> · {p.sharePct}</span>}
+                  </div>))}{(r.payees ?? []).length === 0 && <span className="dim">—</span>}</td>
                 <td className="mono dim">{r.isrc ?? r.code}</td><td>{r.platform}</td>
                 <EditCell text={r.usage ?? ''} initial={r.usage ?? ''} editable={!lock} changed={ch('usage_type')} orig={r.origUsage} onCommit={(v) => edit(r, 'usage_type', v)} />
                 <td className="dim">{r.model}</td><td>{r.country}</td><td className="dim">{r.month}</td>
