@@ -125,7 +125,7 @@ export interface ChannelMap {
   'bulk:revert': [{ batchId: string }, number];
   'payouts:view': [{ quarter?: string }, PayoutsView];
   'payouts:mark': [{ quarter: string; groupKey: string; status: 'draft' | 'ready' | 'paid'; paidKop?: number | null; paidDate?: string | null }, void];
-  'payouts:generate': [{ quarter: string; groupKeys: string[]; city?: string; date?: string }, GenerateResult[]];
+  'payouts:generate': [{ quarter: string; groupKeys: string[]; city?: string; date?: string; round?: 'down' | 'up' | 'nearest' }, GenerateResult[]];
   'payouts:open': [{ path: string }, void];
   'tracks:search': [{ q: string }, TrackHit[]];
   'issues:linkTrack': [{ issueId: string; trackId: string }, { lines: number }];

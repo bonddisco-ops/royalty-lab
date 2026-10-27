@@ -44,7 +44,7 @@ test('комплект: файлы на диске, итог Excel = расчё�
     let html = '';
     const render = async (h: string) => { html = h; return Buffer.from('%PDF-fake'); };
     const key = computeQuarter(db, '2026Q2').groups[0]!.key;
-    const g1 = await generateStatement(db, ctx, dir, '2026Q2', key, { city: 'Санкт-Петербург', date: '2026-09-21' }, render);
+    const g1 = await generateStatement(db, ctx, dir, '2026Q2', key, { city: 'Санкт-Петербург', date: '2026-09-21', round: 'down' }, render);
     assert.equal(g1.versionNo, 1);
     assert.ok(existsSync(join(dir, g1.pdf)) && existsSync(join(dir, g1.xlsx)));
     assert.equal(readFileSync(join(dir, g1.pdf), 'utf8'), '%PDF-fake');
@@ -61,7 +61,7 @@ test('комплект: файлы на диске, итог Excel = расчё�
     v = payoutsView(db, '2026Q2').rows[0]!;
     assert.equal(v.statement?.stale, true); // правка строки → комплект устарел
 
-    const g2 = await generateStatement(db, ctx, dir, '2026Q2', computeQuarter(db, '2026Q2').groups[0]!.key, { city: 'Москва', date: '2026-10-01' }, render);
+    const g2 = await generateStatement(db, ctx, dir, '2026Q2', computeQuarter(db, '2026Q2').groups[0]!.key, { city: 'Москва', date: '2026-10-01', round: 'down' }, render);
     assert.equal(g2.versionNo, 2);
     assert.notEqual(g2.pdf, g1.pdf);
     assert.ok(existsSync(join(dir, g1.pdf))); // старая версия остаётся
@@ -79,9 +79,9 @@ test('комплект: без договора или с неверными д�
   try {
     const render = async () => Buffer.from('x');
     const key = computeQuarter(db, '2026Q2').groups[0]!.key;
-    await assert.rejects(generateStatement(db, ctx, dir, '2026Q2', key, { city: '', date: '2026-09-21' }, render), /город/);
-    await assert.rejects(generateStatement(db, ctx, dir, '2026Q2', key, { city: 'X', date: '21.09.2026' }, render), /Дата/);
-    await assert.rejects(generateStatement(db, ctx, dir, '2026Q2', 'нет', { city: 'X', date: '2026-09-21' }, render), /не найден/);
+    await assert.rejects(generateStatement(db, ctx, dir, '2026Q2', key, { city: '', date: '2026-09-21', round: 'down' }, render), /город/);
+    await assert.rejects(generateStatement(db, ctx, dir, '2026Q2', key, { city: 'X', date: '21.09.2026', round: 'down' }, render), /Дата/);
+    await assert.rejects(generateStatement(db, ctx, dir, '2026Q2', 'нет', { city: 'X', date: '2026-09-21', round: 'down' }, render), /не найден/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

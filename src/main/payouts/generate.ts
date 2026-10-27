@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { getSetting } from '../db/init.ts';
 import { insertRow } from '../db/mutate.ts';
 import type { Ctx, Db } from '../db/types.ts';
-import { computeQuarter, rowsOfGroup } from './calc.ts';
+import { computeQuarter, rowsOfGroup, type RoundMode } from './calc.ts';
 import { ensurePeriod } from './store.ts';
 import { fmtRubPdf, statementHtml } from './statementHtml.ts';
 import { buildStatementXlsx } from './xlsxOut.ts';
@@ -12,7 +12,7 @@ import { buildStatementXlsx } from './xlsxOut.ts';
 /** Лицензиат во всех договорах — константа (ТЗ §4). */
 export const LICENSEE = 'ИП Федотов Иван Васильевич';
 
-export interface GenerateOptions { city: string; date: string }
+export interface GenerateOptions { city: string; date: string; round: RoundMode }
 export interface Generated { groupKey: string; payee: string; versionNo: number; folder: string; xlsx: string; pdf: string }
 export type PdfRenderer = (html: string) => Promise<Buffer>;
 
@@ -22,7 +22,7 @@ export async function generateStatement(db: Db, ctx: Ctx, outputDir: string, qua
   if (!/^\d{4}Q[1-4]$/.test(quarter)) throw new Error('Некорректный квартал');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(opts.date)) throw new Error('Дата в виде 2026-09-21');
   if (!opts.city.trim()) throw new Error('Укажите город для ведомости');
-  const g = computeQuarter(db, quarter).groups.find((x) => x.key === groupKey);
+  const g = computeQuarter(db, quarter, opts.round).groups.find((x) => x.key === groupKey);
   if (!g) throw new Error('Получатель не найден в этом квартале');
   if (!g.contractId || !g.contractNumber) throw new Error('У получателя нет договора: номер договора нужен для ведомости');
   const cp = db.prepare('SELECT * FROM counterparty WHERE id = ?').get(g.payeeId);
@@ -35,7 +35,7 @@ export async function generateStatement(db: Db, ctx: Ctx, outputDir: string, qua
     a.push(r);
     byArtist.set(r.artistName, a);
   }
-  const xl = buildStatementXlsx([...byArtist.entries()].sort((a, b) => a[0].localeCompare(b[0], 'ru')).map(([name, rs]) => ({ name, rows: rs })), getSetting(db, 'hidden_deduction'));
+  const xl = buildStatementXlsx([...byArtist.entries()].sort((a, b) => a[0].localeCompare(b[0], 'ru')).map(([name, rs]) => ({ name, rows: rs })), getSetting(db, 'hidden_deduction'), opts.round);
   if (xl.totalKop !== g.accruedKop) throw new Error(`Внутренняя ошибка: итог Excel (${xl.totalKop}) не совпал с расчётом (${g.accruedKop})`);
 
   const html = statementHtml({
@@ -60,7 +60,7 @@ export async function generateStatement(db: Db, ctx: Ctx, outputDir: string, qua
     insertRow(db, ctx, 'payout_statement', {
       payout_period_id: periodId, version_no: versionNo, xlsx_file: `${folderRel}/${stem}.xlsx`, pdf_file: `${folderRel}/${stem}.pdf`,
       generated_at: new Date().toISOString(), generated_by: ctx.userId, status: 'current',
-      source_versions_json: { digest: g.digest, reports: versionIds, quarter, accruedKop: g.accruedKop, payableKop: g.payableKop, city: opts.city.trim(), date: opts.date },
+      source_versions_json: { digest: g.digest, reports: versionIds, quarter, accruedKop: g.accruedKop, payableKop: g.payableKop, city: opts.city.trim(), date: opts.date, round: opts.round },
     });
     return { groupKey, payee: g.payeeName, versionNo, folder: folderRel, xlsx: `${folderRel}/${stem}.xlsx`, pdf: `${folderRel}/${stem}.pdf` };
   })();

@@ -81,6 +81,17 @@ export interface QuarterCalc {
 
 const floorDiv = (a: bigint, b: bigint): bigint => (a >= 0n ? a / b : -((-a + b - 1n) / b));
 
+/** Направление округления итога на получателя — выбирает пользователь перед формированием комплекта. */
+export type RoundMode = 'down' | 'up' | 'nearest';
+export const ROUND_MODES: RoundMode[] = ['down', 'up', 'nearest'];
+export function roundDiv(a: bigint, b: bigint, mode: RoundMode): number {
+  const f = floorDiv(a, b);
+  if (mode === 'down') return Number(f);
+  const rem = a - f * b;
+  if (mode === 'up') return Number(rem > 0n ? f + 1n : f);
+  return Number(rem * 2n >= b ? f + 1n : f); // «математически»: половина копейки — вверх
+}
+
 interface Part { id: string; track_id: string; artist_id: string; share_authors: string; share_related: string; label_rate: string | null; payee: string | null; contract_id: string | null; from: string | null; to: string | null }
 
 function fullName(c: { last_name?: string | null; first_name?: string | null; middle_name?: string | null }): string {
@@ -189,12 +200,12 @@ export function digestOf(rows: AccrualRow[], deduction: string): string {
 }
 
 /** Итоги квартала: по получателям и договорам, с переносом ниже порога из прошлых кварталов. */
-export function computeQuarter(db: Db, quarter: string, depth = 0): QuarterCalc {
+export function computeQuarter(db: Db, quarter: string, mode: RoundMode = 'down', depth = 0): QuarterCalc {
   const { rows, problems, flowRoyaltyKop, allocatedKop } = computeAccruals(db, quarter);
   const ded = getSetting(db, 'hidden_deduction');
   const prev = depth < 40 ? prevQuarter(db, quarter) : null;
   const prevByKey = new Map<string, GroupCalc>();
-  if (prev) for (const g of computeQuarter(db, prev, depth + 1).groups) prevByKey.set(g.key, g);
+  if (prev) for (const g of computeQuarter(db, prev, mode, depth + 1).groups) prevByKey.set(g.key, g);
 
   const cps = new Map<string, { last_name: string; first_name: string; middle_name: string }>();
   for (const c of db.prepare('SELECT * FROM counterparty').all()) cps.set(c.id, { last_name: c.last_name, first_name: c.first_name, middle_name: c.middle_name });
@@ -207,7 +218,7 @@ export function computeQuarter(db: Db, quarter: string, depth = 0): QuarterCalc 
   for (const [k, pg] of prevByKey) if (pg.carriedOutKop > 0 && !raw.some((g) => g.key === k)) raw.push({ key: k, payeeId: pg.payeeId, contractId: pg.contractId, scaled: 0n, attr: 0n, qty: 0, rows: [] });
 
   for (const g of raw) {
-    const accrued = Number(floorDiv(g.scaled, SCALE3));
+    const accrued = roundDiv(g.scaled, SCALE3, mode);
     const attrKop = Number(floorDiv(g.attr, DEC_ONE));
     const carriedIn = prevByKey.get(g.key)?.carriedOutKop ?? 0;
     const con = g.contractId ? contracts.get(g.contractId) : undefined;

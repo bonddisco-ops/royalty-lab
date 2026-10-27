@@ -145,3 +145,12 @@ test('вкладка «Выплаты»: период создаётся при 
   markPaid(db, ctx, '2026Q2', v.rows[0]!.key, 'draft', null, null);
   assert.equal(payoutsView(db, '2026Q2').rows[0]!.paidKop, null);
 });
+
+test('округление итога: вниз / вверх / математически', async () => {
+  const { roundDiv } = await import('./calc.ts');
+  assert.equal(roundDiv(1234n, 1000n, 'down'), 1);
+  assert.equal(roundDiv(1234n, 1000n, 'up'), 2);
+  assert.equal(roundDiv(1234n, 1000n, 'nearest'), 1);
+  assert.equal(roundDiv(1500n, 1000n, 'nearest'), 2);
+  assert.equal(roundDiv(2000n, 1000n, 'up'), 2); // целое не округляется
+});

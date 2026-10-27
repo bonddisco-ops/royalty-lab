@@ -2,7 +2,10 @@
 // Колонки «Ставка за прослушивание» и «Дистрибьютор» в файл артисту не попадают (ТЗ §6, Схема_БД §12).
 import { zipFiles } from '../export/zipWriter.ts';
 import { DEC_ONE, formatDec, parseDec } from '../domain/dec.ts';
-import type { AccrualRow } from './calc.ts';
+import { roundDiv, type AccrualRow, type RoundMode } from './calc.ts';
+
+const XL_ROUND: Record<RoundMode, string> = { down: 'ROUNDDOWN', up: 'ROUNDUP', nearest: 'ROUND' };
+const MODE_TEXT: Record<RoundMode, string> = { down: 'вниз до копейки', up: 'вверх до копейки', nearest: 'до копейки математически' };
 
 export interface XlsxSheetInput { name: string; rows: AccrualRow[] }
 export interface XlsxResult { buffer: Buffer; /** Итог по всем листам, вниз до копейки — то же число, что в ведомости. */ totalKop: number; sheetNames: string[] }
@@ -32,7 +35,8 @@ export function multiplierText(deduction: string): string {
   return formatDec(DEC_ONE - d).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
 }
 
-export function buildStatementXlsx(sheets: XlsxSheetInput[], deduction: string): XlsxResult {
+export function buildStatementXlsx(sheets: XlsxSheetInput[], deduction: string, mode: RoundMode = 'down'): XlsxResult {
+  const FN = XL_ROUND[mode];
   const mult = multiplierText(deduction);
   const multN = Number(mult);
   const sst: string[] = [];
@@ -75,11 +79,11 @@ export function buildStatementXlsx(sheets: XlsxSheetInput[], deduction: string):
       );
     });
     // итоговая строка таблицы: тираж — SUBTOTAL; «К выплате» — SUBTOTAL, округлённый вниз до копейки
-    const subtotalFloor = Math.floor(sum * 100 + 1e-7) / 100;
+    const subtotalFloor = (mode === 'down' ? Math.floor(sum * 100 + 1e-7) : mode === 'up' ? Math.ceil(sum * 100 - 1e-7) : Math.round(sum * 100)) / 100;
     xml.push(
       `<row r="${totalRow}"><c r="A${totalRow}" t="s"><v>${s('Итог')}</v></c>` +
       `<c r="I${totalRow}" s="2"><f>SUBTOTAL(109,${table}[Тираж])</f><v>${qty}</v></c>` +
-      `<c r="M${totalRow}" s="2"><f>ROUNDDOWN(SUBTOTAL(109,${table}[К выплате]),2)</f><v>${numStr(subtotalFloor)}</v></c></row>`,
+      `<c r="M${totalRow}" s="2"><f>${FN}(SUBTOTAL(109,${table}[К выплате]),2)</f><v>${numStr(subtotalFloor)}</v></c></row>`,
     );
     xml.push(`</sheetData><tableParts count="1"><tablePart r:id="rId1"/></tableParts></worksheet>`);
     files.push({ name: `xl/worksheets/sheet${si + 1}.xml`, data: xml.join('') });
@@ -88,7 +92,7 @@ export function buildStatementXlsx(sheets: XlsxSheetInput[], deduction: string):
       const id = i + 1;
       if (i === 0) return `<tableColumn id="${id}" name="${esc(h)}" totalsRowLabel="Итог"/>`;
       if (i === 8) return `<tableColumn id="${id}" name="${esc(h)}" totalsRowFunction="sum"/>`;
-      if (i === 12) return `<tableColumn id="${id}" name="${esc(h)}" totalsRowFunction="custom"><calculatedColumnFormula>J2*K2*L2*${mult}</calculatedColumnFormula><totalsRowFormula>ROUNDDOWN(SUBTOTAL(109,${table}[К выплате]),2)</totalsRowFormula></tableColumn>`;
+      if (i === 12) return `<tableColumn id="${id}" name="${esc(h)}" totalsRowFunction="custom"><calculatedColumnFormula>J2*K2*L2*${mult}</calculatedColumnFormula><totalsRowFormula>${FN}(SUBTOTAL(109,${table}[К выплате]),2)</totalsRowFormula></tableColumn>`;
       return `<tableColumn id="${id}" name="${esc(h)}"/>`;
     }).join('');
     files.push({
@@ -99,7 +103,7 @@ export function buildStatementXlsx(sheets: XlsxSheetInput[], deduction: string):
   });
 
   // сводный лист: итог по псевдонимам и общий итог = число в ведомости
-  const totalKop = Number(grandScaled >= 0n ? grandScaled / SCALE3 : -((-grandScaled + SCALE3 - 1n) / SCALE3));
+  const totalKop = roundDiv(grandScaled, SCALE3, mode);
   if (sheets.length > 1) {
     const si = sheets.length;
     const rowsX: string[] = [`<row r="1"><c r="A1" t="s"><v>${s('Псевдоним')}</v></c><c r="B1" t="s"><v>${s('Тираж')}</v></c><c r="C1" t="s"><v>${s('К выплате')}</v></c></row>`];
@@ -108,7 +112,7 @@ export function buildStatementXlsx(sheets: XlsxSheetInput[], deduction: string):
       rowsX.push(`<row r="${rn}"><c r="A${rn}" t="s"><v>${s(t.name)}</v></c><c r="B${rn}" s="2"><f>SUBTOTAL(109,${t.table}[Тираж])</f><v>${t.qty}</v></c><c r="C${rn}" s="2"><f>SUBTOTAL(109,${t.table}[К выплате])</f><v>${numStr(t.sum)}</v></c></row>`);
     });
     const tr = totals.length + 2;
-    rowsX.push(`<row r="${tr}"><c r="A${tr}" t="s"><v>${s('Итого к выплате (вниз до копейки)')}</v></c><c r="B${tr}" s="2"><f>SUM(B2:B${tr - 1})</f><v>${totals.reduce((a, t) => a + t.qty, 0)}</v></c><c r="C${tr}" s="2"><f>ROUNDDOWN(SUM(C2:C${tr - 1}),2)</f><v>${totalKop / 100}</v></c></row>`);
+    rowsX.push(`<row r="${tr}"><c r="A${tr}" t="s"><v>${s(`Итого к выплате (${MODE_TEXT[mode]})`)}</v></c><c r="B${tr}" s="2"><f>SUM(B2:B${tr - 1})</f><v>${totals.reduce((a, t) => a + t.qty, 0)}</v></c><c r="C${tr}" s="2"><f>${FN}(SUM(C2:C${tr - 1}),2)</f><v>${totalKop / 100}</v></c></row>`);
     files.push({
       name: `xl/worksheets/sheet${si + 1}.xml`,
       data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="1" width="36" customWidth="1"/><col min="2" max="3" width="16" customWidth="1"/></cols><sheetData>${rowsX.join('')}</sheetData></worksheet>`,

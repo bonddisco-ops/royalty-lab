@@ -125,12 +125,13 @@ function PayDialog({ row, quarter, onClose }: { row: PayoutRow; quarter: string;
 function GenDialog({ rows, quarter, onClose }: { rows: PayoutRow[]; quarter: string; onClose: (changed: boolean) => void }) {
   const [city, setCity] = useState('Санкт-Петербург');
   const [date, setDate] = useState(today());
+  const [round, setRound] = useState<'down' | 'up' | 'nearest'>('down');
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState<GenerateResult[] | null>(null);
   const [err, setErr] = useState('');
   const go = async () => {
     setBusy(true); setErr('');
-    try { setRes(await call('payouts:generate', { quarter, groupKeys: rows.map((r) => r.key), city, date })); } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+    try { setRes(await call('payouts:generate', { quarter, groupKeys: rows.map((r) => r.key), city, date, round })); } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
   return (
     <div className="modal"><div className="dialog" style={{ maxWidth: 640 }}>
@@ -140,6 +141,13 @@ function GenDialog({ rows, quarter, onClose }: { rows: PayoutRow[]; quarter: str
         <div className="grid2" style={{ margin: '10px 0' }}>
           <label className="f">Город в ведомости<input value={city} onChange={(e) => setCity(e.target.value)} /></label>
           <label className="f">Дата ведомости<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+          <label className="f">Округление итога
+            <select value={round} onChange={(e) => setRound(e.target.value as typeof round)}>
+              <option value="down">Вниз до копейки</option>
+              <option value="up">Вверх до копейки</option>
+              <option value="nearest">Математически</option>
+            </select>
+          </label>
         </div>
       )}
       {err && <div className="err">{err}</div>}
@@ -150,7 +158,7 @@ function GenDialog({ rows, quarter, onClose }: { rows: PayoutRow[]; quarter: str
           {r.ok && r.xlsx && <button className="link" onClick={() => void call('payouts:open', { path: r.xlsx! })}>Excel</button>}
         </div>
       ))}
-      <p className="dim">Файлы лягут в папку «output» по кварталам. Старые версии комплекта остаются.</p>
+      <p className="dim">Все расчёты идут без округления; итог на получателя округляется один раз, при формировании. Файлы лягут в папку «output» по кварталам. Старые версии комплекта остаются.</p>
       <div className="row end">
         <button onClick={() => onClose(!!res)}>{res ? 'Закрыть' : 'Отмена'}</button>
         {!res && <button className="primary" disabled={busy} onClick={go}>{busy ? 'Формирую…' : 'Сформировать'}</button>}

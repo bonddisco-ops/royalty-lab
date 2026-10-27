@@ -193,13 +193,13 @@ export function registerReportsIpc(handle: HandleFn, getWindow: () => BrowserWin
     markPaid(s.db, s.ctx, quarter, groupKey, status, paidKop ?? null, paidDate ?? null);
   });
 
-  handle('payouts:generate', async ({ quarter, groupKeys, city, date }): Promise<GenerateResult[]> => {
+  handle('payouts:generate', async ({ quarter, groupKeys, city, date, round }): Promise<GenerateResult[]> => {
     const s = requireSession();
     const out: GenerateResult[] = [];
     const calcNames = new Map(payoutsView(s.db, quarter).rows.map((r) => [r.key, r.payeeName]));
     for (const key of groupKeys) {
       try {
-        const g = await generateStatement(s.db, s.ctx, s.paths.output, quarter, key, { city: city ?? 'Санкт-Петербург', date: date ?? new Date().toISOString().slice(0, 10) }, htmlToPdf);
+        const g = await generateStatement(s.db, s.ctx, s.paths.output, quarter, key, { city: city ?? 'Санкт-Петербург', date: date ?? new Date().toISOString().slice(0, 10), round: round ?? 'down' }, htmlToPdf);
         out.push({ groupKey: key, payee: g.payee, ok: true, versionNo: g.versionNo, folder: g.folder, xlsx: g.xlsx, pdf: g.pdf });
       } catch (e) {
         out.push({ groupKey: key, payee: calcNames.get(key) ?? key, ok: false, error: (e as Error).message });
