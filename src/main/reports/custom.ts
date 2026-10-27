@@ -55,7 +55,7 @@ export function proposeMapping(wb: WorkbookData): { mapping: CustomMapping; head
     for (let i = 0; i < Math.min(40, s.rows.length); i++) {
       const cells = s.rows[i]!.filter((c) => typeof c === 'string' && str(c) !== null);
       if (cells.length < 4) continue;
-      const score = cells.reduce((a, c) => a + (GUESS.some(([, re]) => re.test(lab(c as string))) ? 1 : 0), 0) + (s.rows.length > 20 ? 1 : 0);
+      const score = cells.reduce<number>((a, c) => a + (GUESS.some(([, re]) => re.test(lab(c as string))) ? 1 : 0), 0) + (s.rows.length > 20 ? 1 : 0);
       if (!best || score > best.score) best = { sheet: s.name, row: i, score };
       break; // первая «похожая на шапку» строка листа
     }
