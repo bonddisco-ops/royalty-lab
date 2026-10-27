@@ -53,6 +53,17 @@ export function PhotoEditor({ table, id, file, title, onClose }: { table: PhotoT
     im.src = url;
   }
 
+  // Ctrl+V: скриншот или скопированная картинка прямо из буфера обмена, без сохранения в файл
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const it = [...(e.clipboardData?.items ?? [])].find((i) => i.kind === 'file' && i.type.startsWith('image/'));
+      const f = it?.getAsFile();
+      if (f) { e.preventDefault(); load(f); }
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  });
+
   async function save() {
     if (!img) return;
     setErr('');
@@ -81,7 +92,7 @@ export function PhotoEditor({ table, id, file, title, onClose }: { table: PhotoT
           <div className={'drop' + (over ? ' over' : '')}
             onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
             onDrop={(e) => { e.preventDefault(); setOver(false); load(e.dataTransfer.files[0]); }}>
-            Перетащите картинку сюда или
+            Перетащите картинку сюда, нажмите <b>Ctrl+V</b>, чтобы вставить скриншот из буфера, или
             <div style={{ marginTop: 8 }}><label className="btnlike"><input type="file" accept="image/*" hidden onChange={(e) => load(e.target.files?.[0])} /><span className="primary" style={{ padding: '6px 12px', borderRadius: 6, background: 'var(--accent)', color: '#1a130a', cursor: 'pointer', fontWeight: 600 }}>{file ? 'Заменить…' : 'Выбрать файл…'}</span></label></div>
           </div>
         </>
