@@ -15,8 +15,10 @@ import type { UiField } from '../main/reports/edits.ts';
 import type { AppendixDraft, AppendixListItem, ContractDetail, ContractEdit, ContractListItem, ContractPreview, DraftTrack, ExportRequest } from '../main/contracts/service.ts';
 import type { Block, PBlock, Seg } from '../main/contracts/blocks.ts';
 import type { FieldDef } from '../main/contracts/fields.ts';
+import type { UpdatePreview } from '../main/sync/exchange.ts';
 import type { Facets, LineFilter, LineHistory, LinePage, LineRow, LineSort } from '../main/reports/lines.ts';
 
+export type { UpdatePreview };
 export type { AppendixDraft, AppendixListItem, ContractDetail, ContractEdit, ContractListItem, ContractPreview, DraftTrack, ExportRequest, Block, PBlock, Seg, FieldDef };
 export type { GroupCalc, Problem, QuarterCalc, PayoutRow, PayoutsView, StatementInfo };
 export type { LineHistory, VersionItem, BatchItem, BulkAction, BulkPlan, UiField, Facets, LineFilter, LinePage, LineRow, LineSort, StreamKind };
@@ -188,6 +190,11 @@ export interface ChannelMap {
   'starter:pick': [void, StarterPreview | null];
   'starter:apply': [{ token: string }, StarterResult];
   'backup:now': [void, string];
+  'data:move': [void, { path: string; oldPath: string; files: number; warning: string | null; status: AuthStatus } | null];
+  'sync:save': [{ password: string; includePii: boolean }, { path: string; events: number; bytes: number } | null];
+  'sync:open': [{ password: string }, { token: string; preview: UpdatePreview } | null];
+  'sync:apply': [{ token: string; skipGroups: string[]; keepMine: string[] }, { applied: number; skipped: number; lines: number; files: number }];
+  'sync:cancel': [void, void];
 }
 
 export type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string };

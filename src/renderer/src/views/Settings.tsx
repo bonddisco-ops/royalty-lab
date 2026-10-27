@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { AuthStatus } from '../../../shared/api.ts';
 import { call } from '../api.ts';
 import { StarterDialog as StarterLazy } from './StarterDialog.tsx';
+import { Exchange } from './Exchange.tsx';
 
 const LABELS: Record<string, string> = {
   hidden_deduction: 'Скрытый вычет (доля)', rate_change_mode: 'Смена ставки: keep_rate / …', auto_lock_minutes: 'Автоблокировка, минут (0 — выкл.)',
@@ -15,7 +16,7 @@ export function Settings({ auth, onChanged }: { auth: AuthStatus; onChanged: () 
   const [pw, setPw] = useState({ oldPassword: '', newPassword: '' });
   const [starter, setStarter] = useState(false);
   useEffect(() => { void call('settings:get').then(setS); }, []);
-  const run = async (fn: () => Promise<unknown>, ok: string) => { setErr(''); setMsg(''); try { await fn(); setMsg(ok); onChanged(); } catch (e) { setErr((e as Error).message); } };
+  const run = async (fn: () => Promise<unknown>, ok: string) => { setErr(''); setMsg(''); try { await fn(); if (ok) setMsg(ok); onChanged(); } catch (e) { setErr((e as Error).message); } };
   const owner = auth.user?.role === 'owner';
   return (
     <>
@@ -35,7 +36,12 @@ export function Settings({ auth, onChanged }: { auth: AuthStatus; onChanged: () 
       <div className="row" style={{ marginTop: 8 }}>
         <button onClick={() => run(async () => { const p = await call('data:pickBackupDir'); if (p) setMsg(`Копии будут в: ${p.path}${p.warning ? '. ⚠ ' + p.warning : ''}`); }, '')}>Выбрать папку для копий…</button>
       </div>
-      <div className="dim" style={{ marginTop: 6 }}>Перенос данных в другую папку будет отдельной кнопкой («Переместить данные») — делаю следом.</div>
+      {owner && (
+        <div className="row" style={{ marginTop: 8 }}>
+          <button onClick={() => { if (window.confirm('Программа закроет данные, скопирует папку на новое место и попросит войти заново. Старая папка останется нетронутой. Продолжить?')) void run(async () => { const r = await call('data:move'); if (r) window.alert(`Данные перенесены в ${r.path} (${r.files} файлов). Старая папка ${r.oldPath} осталась — удалите её сами, когда убедитесь, что всё работает. Теперь войдите заново.${r.warning ? ' ⚠ ' + r.warning : ''}`); }, ''); }}>Переместить данные…</button>
+        </div>
+      )}
+      <Exchange onChanged={onChanged} />
       <h2>Мой пароль</h2>
       <div className="grid2">
         <label className="f">Старый<input type="password" value={pw.oldPassword} onChange={(e) => setPw({ ...pw, oldPassword: e.target.value })} /></label>

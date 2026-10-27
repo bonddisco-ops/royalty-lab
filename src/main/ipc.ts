@@ -15,6 +15,8 @@ import { readPhoto, removePhoto, savePhoto } from './photos.ts';
 import * as repo from './repo.ts';
 import { registerReportsIpc } from './ipcReports.ts';
 import { registerContractsIpc } from './ipcContracts.ts';
+import { registerSyncIpc } from './ipcSync.ts';
+import { moveDataRoot } from './moveData.ts';
 import { buildStarterPlan, type StarterPlan } from './seed/starterPlan.ts';
 import { readStarterWorkbook } from './seed/starterReader.ts';
 import { writeStarterPlan } from './seed/starterWrite.ts';
@@ -255,6 +257,7 @@ export function registerIpc(profileDir: string, getWindow: () => BrowserWindow |
 
   registerReportsIpc(handle, getWindow);
   registerContractsIpc(handle);
+  registerSyncIpc(handle, getWindow);
 
   // ---------------------------------------------------- стартовая база (этап 1)
   handle('starter:pick', async (): Promise<StarterPreview | null> => {
@@ -277,6 +280,26 @@ export function registerIpc(profileDir: string, getWindow: () => BrowserWindow |
     writeStarterPlan(s.db, s.ctx, p.plan);
     pending.delete(token);
     return { summary: p.plan.summary, backup };
+  });
+
+  handle('data:move', async () => {
+    const s = requireSession();
+    if (s.user.role !== 'owner') throw new Error('Переносить данные может только владелец');
+    const parent = await pickFolder('Куда перенести данные? Внутри создам папку RoyaltyLab');
+    if (!parent) return null;
+    const oldRoot = s.paths.root;
+    const newRoot = rootFromParent(parent);
+    const warning = cloudWarning(newRoot) ?? cloudWarning(parent);
+    endSession(); // закрывает базу, делает копию
+    try {
+      const r = moveDataRoot(oldRoot, newRoot);
+      writeConfig(cfgFile, { ...readConfig(cfgFile), dataRoot: newRoot });
+      evaluate();
+      return { path: newRoot, oldPath: oldRoot, files: r.files, warning, status: status() };
+    } catch (e) {
+      evaluate();
+      throw e;
+    }
   });
 
   handle('backup:now', () => {
