@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { AppendixDraft, AppendixListItem, Block, ContractDetail, ContractEdit, ContractListItem, ContractPreview, DraftTrack, FieldDef, PBlock, PersonListItem, Seg, TrackHit } from '../../../shared/api.ts';
 import { call } from '../api.ts';
 import { useNav } from '../nav.tsx';
@@ -232,7 +232,10 @@ function Editor({ detail, onClose }: { detail: ContractDetail; onClose: () => vo
   );
 }
 
-function BlockView({ b, fields, onField, onToggle }: { b: Block; fields: FieldDef[]; onField: (k: string, v: number) => void; onToggle: (k: 'cover' | 'release', v: boolean) => void }) {
+/** Режим просмотра: поля договора показываются как текст, ничего не правится. */
+export const ReadOnly = createContext(false);
+
+export function BlockView({ b, fields, onField, onToggle }: { b: Block; fields: FieldDef[]; onField: (k: string, v: number) => void; onToggle: (k: 'cover' | 'release', v: boolean) => void }) {
   if (b.kind === 'table') {
     return (
       <table className="ctr-t"><tbody>{b.rows.map((r, i) => (
@@ -243,11 +246,12 @@ function BlockView({ b, fields, onField, onToggle }: { b: Block; fields: FieldDe
 }
 
 function ParaView({ p, fields, onField, onToggle }: { p: PBlock; fields: FieldDef[]; onField: (k: string, v: number) => void; onToggle: (k: 'cover' | 'release', v: boolean) => void }) {
+  const ro = useContext(ReadOnly);
   if (!p.segs.length) return <div style={{ height: 8 }} />;
   return (
     <p className={`cp a-${p.align}${p.heading ? ' h' : ''}${p.included ? '' : ' off'}`}>
       {p.optional && (
-        <label className="opt"><input type="checkbox" checked={p.included} onChange={(e) => onToggle(p.optional!, e.target.checked)} /> включить пункт</label>
+        <label className="opt"><input type="checkbox" disabled={ro} checked={p.included} onChange={(e) => onToggle(p.optional!, e.target.checked)} /> включить пункт</label>
       )}
       {p.segs.map((s, i) => <SegView key={i} s={s} def={s.k === 'f' ? fields.find((f) => f.key === s.key) : undefined} onField={onField} />)}
     </p>
@@ -261,10 +265,12 @@ function SegView({ s, def, onField }: { s: Seg; def: FieldDef | undefined; onFie
 }
 
 function FieldChip({ s, def, onField }: { s: Extract<Seg, { k: 'f' }>; def: FieldDef | undefined; onField: (k: string, v: number) => void }) {
+  const ro = useContext(ReadOnly);
   const [on, setOn] = useState(false);
   const [v, setV] = useState(String(s.value));
   useEffect(() => { setV(String(s.value)); }, [s.value]);
   const commit = () => { setOn(false); const n = Number(v); if (v !== '' && Number.isFinite(n) && n !== s.value) onField(s.key, n); };
+  if (ro) return <span className="chip ro" title={def?.label ?? ''}>{s.text}</span>;
   if (on) {
     return <input className="chip-in" autoFocus type="number" min={def?.min} max={def?.max} value={v} onChange={(e) => setV(e.target.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setV(String(s.value)); setOn(false); } }} />;
   }

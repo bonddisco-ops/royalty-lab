@@ -3,6 +3,7 @@ import type { ArtistListItem, GenerateResult, OpeningPreview, PayoutRow, Payouts
 import type { OpeningListItem } from '../../../main/payouts/opening.ts';
 import { SearchSelect } from '../SearchSelect.tsx';
 import { call } from '../api.ts';
+import { ContractLink } from '../ContractViewer.tsx';
 import { useNav } from '../nav.tsx';
 import { norm, useSort } from '../sort.tsx';
 import { fmtInt, fmtKop, kopToInput, quarterLabel } from '../util.ts';
@@ -81,7 +82,7 @@ export function Payouts({ onChanged }: { onChanged: () => void }) {
               <Fragment key={r.key}>
                 <tr>
                   <td><button className="link" style={{ padding: 0 }} onClick={() => setOpen(open === r.key ? null : r.key)}>{open === r.key ? '▾' : '▸'}</button> {r.payeeName}</td>
-                  <td>{r.contractNumber ?? <button className="badge bad" title="Создать договор для этого получателя" onClick={() => nav.go('contracts', { contractFor: r.payeeId })}>нет договора — создать</button>}</td>
+                  <td>{r.contractNumber ? <ContractLink id={r.contractId}>{r.contractNumber}</ContractLink> : <button className="badge bad" title="Создать договор для этого получателя" onClick={() => nav.go('contracts', { contractFor: r.payeeId })}>нет договора — создать</button>}</td>
                   <td style={{ textAlign: 'right' }}>{fmtKop(r.accruedKop)}</td>
                   <td style={{ textAlign: 'right' }} className="dim">{r.carriedInKop ? fmtKop(r.carriedInKop) : ''}</td>
                   <td style={{ textAlign: 'right' }}><b>{fmtKop(r.payableKop)}</b></td>

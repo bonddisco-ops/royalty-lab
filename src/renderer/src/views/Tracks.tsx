@@ -3,6 +3,7 @@ import type { ArtistListItem, TrackView } from '../../../shared/api.ts';
 import { call } from '../api.ts';
 import { Avatar } from '../Avatar.tsx';
 import { PhotoEditor } from '../PhotoEditor.tsx';
+import { ContractLink } from '../ContractViewer.tsx';
 import { useNav } from '../nav.tsx';
 import { SearchSelect } from '../SearchSelect.tsx';
 import { useSort } from '../sort.tsx';
@@ -18,7 +19,7 @@ function Participant({ p, trackId, bad, reload }: { p: TrackView['participants']
   return (
     <>
       <div className="part">
-        <div>{p.artist}{p.duplicate && <span className="badge bad">дубль</span>}<div className="dim" style={{ fontSize: 12 }}>{p.contract ?? 'нет договора'}{p.payee ? ` · получатель: ${p.payee}` : ''}</div></div>
+        <div>{p.artist}{p.duplicate && <span className="badge bad">дубль</span>}<div className="dim" style={{ fontSize: 12 }}>{p.contractId ? <ContractLink id={p.contractId} opts={{ trackId, artist: p.artist }}>{p.contract}</ContractLink> : (p.contract ?? 'нет договора')}{p.payee ? ` · получатель: ${p.payee}` : ''}</div></div>
         <input value={a} onChange={(e) => setA(e.target.value)} title="Авторские, %" />
         <input value={r} onChange={(e) => setR(e.target.value)} title="Смежные, %" />
         <input value={rate} onChange={(e) => setRate(e.target.value)} title="Ставка лейбла, %" placeholder="ставка" />

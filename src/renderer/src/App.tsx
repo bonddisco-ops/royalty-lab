@@ -13,6 +13,7 @@ import { Lines } from './views/Lines.tsx';
 import { Payouts } from './views/Payouts.tsx';
 import { Contracts } from './views/Contracts.tsx';
 import { Logo } from './Logo.tsx';
+import { ContractViewerProvider } from './ContractViewer.tsx';
 import { NavContext, type NavParams, type Tab } from './nav.tsx';
 import { THEMES, applyTheme, savedTheme } from './themes.ts';
 import { Settings } from './views/Settings.tsx';
@@ -47,6 +48,7 @@ export function App() {
 
   return (
     <NavContext.Provider value={navApi}>
+    <ContractViewerProvider>
     <div className="shell">
       <nav className="side">
         <div className="brand"><Logo size={26} /><span>Royalty Lab</span></div>
@@ -74,6 +76,7 @@ export function App() {
         {tab === 'settings' && <Settings auth={auth} onChanged={refresh} />}
       </main>
     </div>
+    </ContractViewerProvider>
     </NavContext.Provider>
   );
 }

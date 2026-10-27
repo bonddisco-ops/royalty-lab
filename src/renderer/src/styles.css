@@ -74,3 +74,4 @@ th.sortable { cursor: pointer; user-select: none; } th.sortable:hover { color: v
 .fix { white-space: nowrap; } .redrow td { background: color-mix(in srgb, var(--bad) 14%, transparent); }
 button.badge { cursor: pointer; font: inherit; font-size: 12px; padding: 1px 8px; }
 button.badge.bad:hover { background: color-mix(in srgb, var(--bad) 20%, transparent); }
+.ctr-doc .chip.ro { cursor: default; border-style: solid; background: #fff6d6; }

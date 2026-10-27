@@ -3,6 +3,7 @@ import type { ArtistListItem, PersonDetail, PersonListItem } from '../../../shar
 import { call, FIELD_GROUPS, FIELD_LABELS } from '../api.ts';
 import { Avatar } from '../Avatar.tsx';
 import { PhotoEditor } from '../PhotoEditor.tsx';
+import { ContractLink } from '../ContractViewer.tsx';
 import { useNav } from '../nav.tsx';
 import { SearchSelect } from '../SearchSelect.tsx';
 import { useSort } from '../sort.tsx';
@@ -69,7 +70,7 @@ function PersonDialog({ id, onClose }: { id: string | null; onClose: () => void 
       {id && det && (<>
         <h3>Договоры</h3>
         {det.contracts.length === 0 && <div className="row"><span className="badge bad">договор не создан</span><button className="primary" onClick={() => { onClose(); nav.go('contracts', { contractFor: id }); }}>Создать договор</button></div>}
-        <ul className="plain">{det.contracts.map((c) => <li key={c.id}>{c.number} <span className="dim">{c.date ?? 'без даты'} · {c.kind}{c.has_pdf ? '' : ' · PDF не приложен'}</span></li>)}</ul>
+        <ul className="plain">{det.contracts.map((c) => <li key={c.id}><ContractLink id={c.id}>{c.number}</ContractLink> <span className="dim">{c.date ?? 'без даты'} · {c.kind}{c.has_pdf ? '' : ' · PDF не приложен'}</span></li>)}</ul>
       </>)}
       {err && <div className="err">{err}</div>}
       {photoOpen && id && <PhotoEditor table="counterparty" id={id} file={(det?.fields.photo_file as string | null) ?? null} title={det ? [det.fields.last_name, det.fields.first_name].filter(Boolean).join(' ') : ''} onClose={(ch) => { setPhotoOpen(false); if (ch) void load(reveal); }} />}
