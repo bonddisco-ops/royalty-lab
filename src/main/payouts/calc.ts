@@ -197,7 +197,7 @@ export function computeQuarter(db: Db, quarter: string, depth = 0): QuarterCalc 
   if (prev) for (const g of computeQuarter(db, prev, depth + 1).groups) prevByKey.set(g.key, g);
 
   const cps = new Map<string, { last_name: string; first_name: string; middle_name: string }>();
-  for (const c of db.prepare('SELECT * FROM counterparty').all()) cps.set(c.id, c);
+  for (const c of db.prepare('SELECT * FROM counterparty').all()) cps.set(c.id, { last_name: c.last_name, first_name: c.first_name, middle_name: c.middle_name });
   const contracts = new Map<string, { number: string; date: string | null; threshold: number | null; rule: string | null }>();
   for (const c of db.prepare('SELECT * FROM contract').all()) contracts.set(c.id, { number: c.number, date: c.date, threshold: c.threshold_rub, rule: c.threshold_rule });
 
