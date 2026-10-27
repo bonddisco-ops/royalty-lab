@@ -28,6 +28,12 @@ export function rateToShare(v: Cell | undefined): string | null {
   return String(Number(share.toPrecision(10)));
 }
 
+/** Рубли → точные копейки десятичной строкой (до 6 знаков), без округления до копейки: 0.003614 ₽ → "0.3614". */
+export function toExactKop(rub: number): string {
+  const v = Number((rub * 100).toPrecision(14));
+  return v.toFixed(6).replace(/0+$/, '').replace(/\.$/, '');
+}
+
 /** Рубли → копейки, до ближайшей копейки (поправка на двоичную дробь: 0.285 → 29). */
 export function toKop(rub: number): number {
   return Math.round(Number((rub * 100).toPrecision(14)));

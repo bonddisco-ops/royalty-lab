@@ -8,6 +8,8 @@ export interface BaseLine {
   id: string;
   qty: number;
   royaltyKop: number;
+  /** Точная сумма в копейках (десятичная строка), если известна. */
+  exactKop?: string | null;
   streamKind: StreamKind;
   usageType: string | null;
   trackId: string | null;
@@ -24,6 +26,8 @@ export interface EffPiece {
   splitId: string | null;
   qty: number;
   royaltyKop: number;
+  /** Точная сумма в копейках: у нетронутой строки — как в отчёте, у правленой/разбитой — целые копейки. */
+  exactKop: string;
   /** Ставка за прослушивание в рублях, 8 знаков; null если тираж 0. */
   rate: string | null;
   /** Та же ставка точной дробью (копейки за прослушивание) — для массовых расчётов. */
@@ -120,7 +124,7 @@ export function effectivePieces(base: BaseLine, edits: EditRec[], splits: SplitR
     const mRoy = mRoyRaw;
     const piece: State = { qty: m, roy: mRoy, rate: mRate, kind: sp.toStreamKind, usage: sp.toUsageType ?? rem.usage, track: rem.track };
     moved.push({
-      key: `${base.id}#${sp.id}`, lineId: base.id, splitId: sp.id, qty: m, royaltyKop: mRoy, rate: rateToRubString(mRate), rateFrac: mRate,
+      key: `${base.id}#${sp.id}`, lineId: base.id, splitId: sp.id, qty: m, royaltyKop: mRoy, exactKop: String(mRoy), rate: rateToRubString(mRate), rateFrac: mRate,
       streamKind: piece.kind, usageType: piece.usage, trackId: piece.track, changed: [...new Set([...changedOf(piece), 'split'])],
     });
     const left = rem.qty - m;
@@ -130,8 +134,10 @@ export function effectivePieces(base: BaseLine, edits: EditRec[], splits: SplitR
     rem = { ...rem, qty: left, roy: leftRoy, rate: sp.ratePerStream ? rem.rate : left > 0 ? { n: BigInt(leftRoy), d: BigInt(left) } : null };
   }
   out.push({
-    key: base.id, lineId: base.id, splitId: null, qty: rem.qty, royaltyKop: rem.roy, rate: rateToRubString(rem.rate), rateFrac: rem.rate,
+    key: base.id, lineId: base.id, splitId: null, qty: rem.qty, royaltyKop: rem.roy, exactKop: String(rem.roy), rate: rateToRubString(rem.rate), rateFrac: rem.rate,
     streamKind: rem.kind, usageType: rem.usage, trackId: rem.track, changed: [...changedOf(rem), ...(splits.length ? ['split'] : [])],
   });
+  const touched = out[0]!.changed.length > 0;
+  if (!touched && base.exactKop) out[0]!.exactKop = base.exactKop;
   return [...out, ...moved];
 }

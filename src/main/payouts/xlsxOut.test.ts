@@ -11,8 +11,8 @@ function row(over: Partial<AccrualRow>): AccrualRow {
   const p = (s: string): bigint => BigInt(Math.round(Number(s) * 1e12));
   return {
     key: 'k' + Math.random(), lineId: 'l', reportId: 'r', distributor: 'D', rights: 'authors', upc: '4660275083205', isrc: 'RUAGV2501290', code: null, artistRaw: 'YUME;Takisha',
-    title: 'Motives', platform: 'Apple Music', usage: 'Подписка', country: 'РОССИЯ', month: '2026-04', qty: 2, royaltyKop: roy, trackId: 't', artistId: 'a', artistName: 'YUME',
-    participationId: 'p', share, labelRate: rate, groupKey: 'g|c', scaled: BigInt(roy) * p(share) * p(rate) * p('0.94'), ...over,
+    title: 'Motives', platform: 'Apple Music', usage: 'Подписка', country: 'РОССИЯ', month: '2026-04', qty: 2, royaltyKop: roy, exactKop: String(roy), trackId: 't', artistId: 'a', artistName: 'YUME',
+    participationId: 'p', share, labelRate: rate, groupKey: 'g|c', scaled: BigInt(roy) * DEC * p(share) * p(rate) * p('0.94'), ...over,
   };
 }
 

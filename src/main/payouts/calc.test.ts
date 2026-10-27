@@ -154,3 +154,15 @@ test('округление итога: вниз / вверх / математи�
   assert.equal(roundDiv(1500n, 1000n, 'nearest'), 2);
   assert.equal(roundDiv(2000n, 1000n, 'up'), 2); // целое не округляется
 });
+
+test('точная сумма: хвосты копеек не теряются до итога, правка строки переводит её на целые копейки', async () => {
+  const { toExactKop } = await import('../reports/util.ts');
+  const { effectivePieces } = await import('../reports/effective.ts');
+  assert.equal(toExactKop(0.003614), '0.3614');
+  assert.equal(toExactKop(1.5), '150');
+  assert.equal(toExactKop(0.285), '28.5');
+  const base = { id: 'l', qty: 1000, royaltyKop: 36, exactKop: '36.14', streamKind: 'paid' as const, usageType: null, trackId: null };
+  assert.equal(effectivePieces(base, [], [])[0]!.exactKop, '36.14');
+  const edited = effectivePieces(base, [{ id: 'e', lineId: 'l', field: 'qty', newValue: '2000' }], []);
+  assert.equal(edited[0]!.exactKop, String(edited[0]!.royaltyKop)); // правка → целые копейки
+});

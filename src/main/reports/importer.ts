@@ -8,7 +8,7 @@ import type { Ctx, Db, Row } from '../db/types.ts';
 import { uuidv7 } from '../domain/ids.ts';
 import { normKey } from '../domain/normalize.ts';
 import type { Flow, ParsedLine, ParsedReport, RightsType, StreamKind } from './types.ts';
-import { toKop } from './util.ts';
+import { toExactKop, toKop } from './util.ts';
 
 // ------------------------------------------------------------------ агрегация
 
@@ -413,11 +413,11 @@ export function commitImport(db: Db, ctx: Ctx, inp: ImportInput, opts: CommitOpt
 
       const ins = db.prepare(
         `INSERT INTO statement_line (id, report_version_id, row_key, rights_type, track_id, artist_raw, title_raw, isrc_raw, upc_raw, code_raw, platform, usage_type, usage_model,
-           stream_kind, country, period_month, qty, royalty_kop, currency_orig, amount_orig, raw_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           stream_kind, country, period_month, qty, royalty_kop, royalty_exact, currency_orig, amount_orig, raw_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       );
       a.agg.forEach((l, i) => {
         ins.run(uuidv7(), versionId, l.rowKey, l.rightsType, a.matches[i] ?? null, l.artistRaw, l.titleRaw, l.isrc, l.upc, l.code, l.platform, l.usageType, l.usageModel,
-          l.streamKind, l.country, l.periodMonth, l.qty, l.royaltyKop, l.currencyOrig, l.amountOrig, JSON.stringify({ ...l.raw, merged: l.merged, firstRow: l.firstRow }));
+          l.streamKind, l.country, l.periodMonth, l.qty, l.royaltyKop, toExactKop(l.royaltyExact), l.currencyOrig, l.amountOrig, JSON.stringify({ ...l.raw, merged: l.merged, firstRow: l.firstRow }));
       });
       for (const iss of a.issues) {
         insertRow(db, ctx, 'issue', { kind: iss.kind, entity_type: 'report_version', entity_id: versionId, report_version_id: versionId, details_json: iss.details, status: 'open' });

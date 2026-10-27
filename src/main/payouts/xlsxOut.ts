@@ -2,7 +2,7 @@
 // Колонки «Ставка за прослушивание» и «Дистрибьютор» в файл артисту не попадают (ТЗ §6, Схема_БД §12).
 import { zipFiles } from '../export/zipWriter.ts';
 import { DEC_ONE, formatDec, parseDec } from '../domain/dec.ts';
-import { roundDiv, type AccrualRow, type RoundMode } from './calc.ts';
+import { SCALE4, roundDiv, type AccrualRow, type RoundMode } from './calc.ts';
 
 const XL_ROUND: Record<RoundMode, string> = { down: 'ROUNDDOWN', up: 'ROUNDUP', nearest: 'ROUND' };
 const MODE_TEXT: Record<RoundMode, string> = { down: 'вниз до копейки', up: 'вверх до копейки', nearest: 'до копейки математически' };
@@ -12,7 +12,6 @@ export interface XlsxResult { buffer: Buffer; /** Итог по всем лис�
 
 const HEAD = ['UPC', 'ISRC', 'Артист', 'Артист (для сопоставления)', 'Название трека', 'Платформа', 'Тип стрима', 'Страна', 'Тираж', 'Роялти', 'Ставка трека', 'Ставка лейбла', 'К выплате'];
 const WIDTHS = [15, 15, 26, 28, 24, 24, 40, 30, 10, 12, 14, 16, 14];
-const SCALE3 = DEC_ONE * DEC_ONE * DEC_ONE;
 
 const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '');
 const col = (i: number): string => String.fromCharCode(65 + i);
@@ -67,7 +66,7 @@ export function buildStatementXlsx(sheets: XlsxSheetInput[], deduction: string, 
     xml.push(`<row r="1">${HEAD.map((h, i) => `<c r="${col(i)}1" t="s"><v>${s(h)}</v></c>`).join('')}</row>`);
     rows.forEach((r, i) => {
       const rn = i + 2;
-      const roy = r.royaltyKop / 100;
+      const roy = decNum(r.exactKop) / 100;
       const sh_ = decNum(r.share), lr = decNum(r.labelRate);
       const pay = roy * sh_ * lr * multN;
       qty += r.qty; sum += pay; grandScaled += r.scaled;
@@ -103,7 +102,7 @@ export function buildStatementXlsx(sheets: XlsxSheetInput[], deduction: string, 
   });
 
   // сводный лист: итог по псевдонимам и общий итог = число в ведомости
-  const totalKop = roundDiv(grandScaled, SCALE3, mode);
+  const totalKop = roundDiv(grandScaled, SCALE4, mode);
   if (sheets.length > 1) {
     const si = sheets.length;
     const rowsX: string[] = [`<row r="1"><c r="A1" t="s"><v>${s('Псевдоним')}</v></c><c r="B1" t="s"><v>${s('Тираж')}</v></c><c r="C1" t="s"><v>${s('К выплате')}</v></c></row>`];

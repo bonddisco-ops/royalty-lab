@@ -7,7 +7,8 @@ import type { Db } from '../db/types.ts';
 import { DEC_ONE, decEquals, formatDec, parseDec } from '../domain/dec.ts';
 import { filteredLines, type LineRow } from '../reports/lines.ts';
 
-const SCALE3 = DEC_ONE * DEC_ONE * DEC_ONE; // три множителя масштаба 1e12
+export const SCALE4 = DEC_ONE * DEC_ONE * DEC_ONE * DEC_ONE; // четыре множителя масштаба 1e12: сумма, доля, ставка, вычет
+const exactOf = (r: { exactKop: string; royaltyKop: number }): bigint => parseDec(r.exactKop) ?? BigInt(r.royaltyKop) * DEC_ONE;
 
 export interface AccrualRow {
   key: string;
@@ -26,6 +27,8 @@ export interface AccrualRow {
   month: string | null;
   qty: number;
   royaltyKop: number;
+  /** Точная сумма строки в копейках, десятичная строка. */
+  exactKop: string;
   trackId: string;
   artistId: string;
   artistName: string;
@@ -33,7 +36,7 @@ export interface AccrualRow {
   share: string;
   labelRate: string;
   groupKey: string;
-  /** Начисление в «копейках × 1e36», без округления. */
+  /** Начисление в «копейках × 1e48», без округления. */
   scaled: bigint;
 }
 
@@ -160,9 +163,9 @@ export function computeAccruals(db: Db, quarter: string): { rows: AccrualRow[]; 
       rows.push({
         key: l.key, lineId: l.lineId, reportId: l.reportId, distributor: l.distributor, rights: l.rights, upc: l.upc, isrc: l.isrc, code: l.code,
         artistRaw: l.artist, title: l.title ?? l.trackTitle, platform: l.platform, usage: l.usage ?? l.model, country: l.country, month: l.month,
-        qty: l.qty, royaltyKop: l.royaltyKop, trackId: l.trackId, artistId: p.artist_id, artistName: art?.name ?? '', participationId: p.id,
+        qty: l.qty, royaltyKop: l.royaltyKop, exactKop: l.exactKop, trackId: l.trackId, artistId: p.artist_id, artistName: art?.name ?? '', participationId: p.id,
         share: shareStr, labelRate: p.label_rate, groupKey: `${payee}|${contractId ?? ''}`,
-        scaled: BigInt(l.royaltyKop) * share * rate * mult,
+        scaled: (parseDec(l.exactKop) ?? BigInt(l.royaltyKop) * DEC_ONE) * share * rate * mult,
       });
       used = true;
     }
@@ -184,7 +187,7 @@ function groupRows(rows: AccrualRow[]): RawGroup[] {
     const [payeeId = '', c = ''] = r.groupKey.split('|');
     const g = m.get(r.groupKey) ?? { key: r.groupKey, payeeId, contractId: c || null, scaled: 0n, attr: 0n, qty: 0, rows: [] };
     g.scaled += r.scaled;
-    g.attr += BigInt(r.royaltyKop) * parseDec(r.share)!;
+    g.attr += exactOf(r) * parseDec(r.share)!;
     g.qty += r.qty;
     g.rows.push(r);
     m.set(r.groupKey, g);
@@ -195,7 +198,7 @@ function groupRows(rows: AccrualRow[]): RawGroup[] {
 export function digestOf(rows: AccrualRow[], deduction: string): string {
   const h = createHash('sha256');
   h.update(deduction);
-  for (const r of [...rows].sort((a, b) => (a.key + a.participationId < b.key + b.participationId ? -1 : 1))) h.update(`|${r.key}:${r.participationId}:${r.qty}:${r.royaltyKop}:${r.share}:${r.labelRate}`);
+  for (const r of [...rows].sort((a, b) => (a.key + a.participationId < b.key + b.participationId ? -1 : 1))) h.update(`|${r.key}:${r.participationId}:${r.qty}:${r.exactKop}:${r.share}:${r.labelRate}`);
   return h.digest('hex').slice(0, 24);
 }
 
@@ -218,8 +221,8 @@ export function computeQuarter(db: Db, quarter: string, mode: RoundMode = 'down'
   for (const [k, pg] of prevByKey) if (pg.carriedOutKop > 0 && !raw.some((g) => g.key === k)) raw.push({ key: k, payeeId: pg.payeeId, contractId: pg.contractId, scaled: 0n, attr: 0n, qty: 0, rows: [] });
 
   for (const g of raw) {
-    const accrued = roundDiv(g.scaled, SCALE3, mode);
-    const attrKop = Number(floorDiv(g.attr, DEC_ONE));
+    const accrued = roundDiv(g.scaled, SCALE4, mode);
+    const attrKop = Number(floorDiv(g.attr, DEC_ONE * DEC_ONE));
     const carriedIn = prevByKey.get(g.key)?.carriedOutKop ?? 0;
     const con = g.contractId ? contracts.get(g.contractId) : undefined;
     const threshold = con?.threshold ?? null;
@@ -231,7 +234,7 @@ export function computeQuarter(db: Db, quarter: string, mode: RoundMode = 'down'
     // средневзвешенная ставка лейбла: Σ(роялти×доля×ставка) / Σ(роялти×доля)
     let num = 0n, den = 0n;
     for (const r of g.rows) {
-      const base = BigInt(r.royaltyKop) * parseDec(r.share)!;
+      const base = exactOf(r) * parseDec(r.share)!;
       num += base * parseDec(r.labelRate)!;
       den += base;
     }

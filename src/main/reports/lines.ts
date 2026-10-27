@@ -24,6 +24,7 @@ export interface LineRow {
   month: string | null;
   qty: number;
   royaltyKop: number;
+  exactKop: string;
   rate: string | null;
   streamKind: StreamKind;
   trackId: string | null;
@@ -117,12 +118,12 @@ function loadVersionFull(db: Db, versionId: string): VersionCache {
   const out: LineRow[] = [];
   const src = new Map<string, LineSrc>();
   for (const l of db.prepare('SELECT * FROM statement_line WHERE report_version_id = ?').all(versionId)) {
-    const base: BaseLine = { id: l.id, qty: l.qty, royaltyKop: l.royalty_kop, streamKind: l.stream_kind, usageType: l.usage_type, trackId: l.track_id };
+    const base: BaseLine = { id: l.id, qty: l.qty, royaltyKop: l.royalty_kop, exactKop: l.royalty_exact ?? null, streamKind: l.stream_kind, usageType: l.usage_type, trackId: l.track_id };
     const ed = edits.get(l.id) ?? [];
     const sp = splits.get(l.id) ?? [];
     const origRate = l.qty > 0 ? rateToRubString({ n: BigInt(l.royalty_kop), d: BigInt(l.qty) }) : null;
     const pieces: EffPiece[] = ed.length === 0 && sp.length === 0
-      ? [{ key: l.id, lineId: l.id, splitId: null, qty: l.qty, royaltyKop: l.royalty_kop, rate: origRate, streamKind: l.stream_kind, usageType: l.usage_type, trackId: l.track_id, changed: [], rateFrac: l.qty > 0 ? { n: BigInt(l.royalty_kop), d: BigInt(l.qty) } : null }]
+      ? [{ key: l.id, lineId: l.id, splitId: null, qty: l.qty, royaltyKop: l.royalty_kop, exactKop: l.royalty_exact ?? String(l.royalty_kop), rate: origRate, streamKind: l.stream_kind, usageType: l.usage_type, trackId: l.track_id, changed: [], rateFrac: l.qty > 0 ? { n: BigInt(l.royalty_kop), d: BigInt(l.qty) } : null }]
       : effectivePieces(base, ed, sp);
     src.set(l.id, { base, edits: ed, splits: sp, pieces });
     for (const p of pieces) {
@@ -130,7 +131,7 @@ function loadVersionFull(db: Db, versionId: string): VersionCache {
       out.push({
         key: p.key, lineId: l.id, splitId: p.splitId, versionId, reportId: head.report_id, distributor: head.distributor, quarter: head.quarter, rights: l.rights_type,
         upc: l.upc_raw, isrc: l.isrc_raw, code: l.code_raw, artist: l.artist_raw, title: l.title_raw, platform: l.platform, usage: p.usageType, model: l.usage_model,
-        country: l.country, month: l.period_month, qty: p.qty, royaltyKop: p.royaltyKop, rate: p.rate, streamKind: p.streamKind, trackId: p.trackId,
+        country: l.country, month: l.period_month, qty: p.qty, royaltyKop: p.royaltyKop, exactKop: p.exactKop, rate: p.rate, streamKind: p.streamKind, trackId: p.trackId,
         trackTitle: p.trackId ? titles.get(p.trackId) ?? null : null,
         origQty: moved ? 0 : l.qty, origRoyaltyKop: moved ? 0 : l.royalty_kop, origRate: moved ? null : origRate, origStreamKind: l.stream_kind, origUsage: l.usage_type,
         changed: p.changed, hasSplit: sp.length > 0, splitCount: sp.length,

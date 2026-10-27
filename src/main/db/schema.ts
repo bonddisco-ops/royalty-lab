@@ -338,12 +338,18 @@ CREATE TABLE payout_statement (
 CREATE INDEX ix_statement_period ON payout_statement(payout_period_id);
 `;
 
+// M006: точная сумма роялти строки (копейки, десятичная строка) — без округления до копейки при импорте.
+const M006 = `
+ALTER TABLE statement_line ADD COLUMN royalty_exact TEXT;
+`;
+
 export const MIGRATIONS: Array<{ version: number; sql: string }> = [
   { version: 1, sql: M001 },
   { version: 2, sql: M002 },
   { version: 3, sql: M003 },
   { version: 4, sql: M004 },
   { version: 5, sql: M005 },
+  { version: 6, sql: M006 },
 ];
 
 export function currentVersion(db: Db): number {
