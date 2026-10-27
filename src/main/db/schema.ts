@@ -24,6 +24,9 @@ export const DATA_TABLES = [
   'report',
   'report_version',
   'report_payment',
+  'line_edit',
+  'line_split',
+  'edit_batch',
 ] as const;
 export type DataTable = (typeof DATA_TABLES)[number];
 
@@ -257,10 +260,50 @@ CREATE INDEX ix_line_platform ON statement_line(platform);
 CREATE INDEX ix_line_usage ON statement_line(usage_type);
 `;
 
+// M004 (этап 3, Схема_БД §7): слой правок поверх неизменных строк отчёта.
+const M004 = `
+CREATE TABLE edit_batch (
+  id TEXT PRIMARY KEY,
+  filter_json TEXT NOT NULL,
+  action_json TEXT NOT NULL,
+  summary_delta_kop INTEGER NOT NULL DEFAULT 0,
+  affected INTEGER NOT NULL DEFAULT 0,
+  reverted_at TEXT,
+  ${STD}
+);
+
+CREATE TABLE line_edit (
+  id TEXT PRIMARY KEY,
+  line_id TEXT NOT NULL REFERENCES statement_line(id),
+  field TEXT NOT NULL CHECK (field IN ('qty','royalty_kop','rate_per_stream','stream_kind','usage_type','track_id')),
+  new_value TEXT,
+  batch_id TEXT REFERENCES edit_batch(id),
+  reverted_at TEXT,
+  ${STD}
+);
+CREATE INDEX ix_edit_line ON line_edit(line_id);
+CREATE INDEX ix_edit_batch ON line_edit(batch_id);
+
+CREATE TABLE line_split (
+  id TEXT PRIMARY KEY,
+  line_id TEXT NOT NULL REFERENCES statement_line(id),
+  qty_moved INTEGER NOT NULL,
+  to_stream_kind TEXT NOT NULL CHECK (to_stream_kind IN ('paid','ad','other','nonstream')),
+  to_usage_type TEXT,
+  rate_per_stream TEXT,
+  batch_id TEXT REFERENCES edit_batch(id),
+  reverted_at TEXT,
+  ${STD}
+);
+CREATE INDEX ix_split_line ON line_split(line_id);
+CREATE INDEX ix_split_batch ON line_split(batch_id);
+`;
+
 export const MIGRATIONS: Array<{ version: number; sql: string }> = [
   { version: 1, sql: M001 },
   { version: 2, sql: M002 },
   { version: 3, sql: M003 },
+  { version: 4, sql: M004 },
 ];
 
 export function currentVersion(db: Db): number {

@@ -6,8 +6,12 @@ import type { PlanSummary } from '../main/seed/starterPlan.ts';
 import type { ImportPreview } from '../main/reports/importer.ts';
 import type { CustomField, CustomMapping } from '../main/reports/custom.ts';
 import type { QuarterPanel, ReportListItem } from '../main/reports/queries.ts';
-import type { Flow } from '../main/reports/types.ts';
+import type { Flow, StreamKind } from '../main/reports/types.ts';
+import type { BatchItem, BulkAction, BulkPlan } from '../main/reports/bulk.ts';
+import type { UiField } from '../main/reports/edits.ts';
+import type { Facets, LineFilter, LinePage, LineRow, LineSort } from '../main/reports/lines.ts';
 
+export type { BatchItem, BulkAction, BulkPlan, UiField, Facets, LineFilter, LinePage, LineRow, LineSort, StreamKind };
 export type { ImportPreview, CustomField, CustomMapping, QuarterPanel, ReportListItem, Flow };
 export type { Role, ArtistListItem, Dashboard, IssueView, PersonDetail, PersonListItem, TrackView, PlanSummary, Row };
 
@@ -92,6 +96,15 @@ export interface ChannelMap {
   'reports:delete': [{ reportId: string }, { versions: number; closedIssues: number }];
   'wizard:info': [{ id: string; sheet?: string; headerRow?: number }, WizardInfo];
   'wizard:apply': [{ id: string; mapping: CustomMapping }, ImportItem];
+  'lines:query': [{ filter: LineFilter; sort?: LineSort; offset?: number; limit?: number }, LinePage];
+  'lines:facets': [{ quarter?: string }, Facets];
+  'lines:edit': [{ lineId: string; field: UiField; value: string | null }, void];
+  'lines:split': [{ lineId: string; qtyMoved: number; toKind: StreamKind; rate?: string | null }, void];
+  'lines:revert': [{ lineId: string }, number];
+  'bulk:plan': [{ filter: LineFilter; action: BulkAction }, Omit<BulkPlan, 'items'>];
+  'bulk:apply': [{ filter: LineFilter; action: BulkAction }, { batchId: string; affected: number; deltaKop: number }];
+  'bulk:list': [void, BatchItem[]];
+  'bulk:revert': [{ batchId: string }, number];
   'tracks:search': [{ q: string }, TrackHit[]];
   'issues:linkTrack': [{ issueId: string; trackId: string }, { lines: number }];
   'issues:createTrack': [{ issueId: string }, { trackId: string }];

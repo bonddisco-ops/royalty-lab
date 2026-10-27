@@ -9,10 +9,11 @@ import { People } from './views/People.tsx';
 import { Artists } from './views/Artists.tsx';
 import { Issues } from './views/Issues.tsx';
 import { Reports } from './views/Reports.tsx';
+import { Lines } from './views/Lines.tsx';
 import { Settings } from './views/Settings.tsx';
 
-type Tab = 'home' | 'tracks' | 'people' | 'artists' | 'reports' | 'issues' | 'settings';
-const TABS: Array<[Tab, string]> = [['home', 'Главная'], ['tracks', 'Треки'], ['people', 'Люди'], ['artists', 'Артисты'], ['reports', 'Отчёты'], ['issues', 'Проверить'], ['settings', 'Настройки']];
+type Tab = 'home' | 'tracks' | 'people' | 'artists' | 'reports' | 'lines' | 'issues' | 'settings';
+const TABS: Array<[Tab, string]> = [['home', 'Главная'], ['tracks', 'Треки'], ['people', 'Люди'], ['artists', 'Артисты'], ['reports', 'Отчёты'], ['lines', 'Строки'], ['issues', 'Проверить'], ['settings', 'Настройки']];
 
 export function App() {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
@@ -55,6 +56,7 @@ export function App() {
         {tab === 'people' && <People onChanged={refresh} />}
         {tab === 'artists' && <Artists onChanged={refresh} />}
         {tab === 'reports' && <Reports onChanged={refresh} />}
+        {tab === 'lines' && <Lines onChanged={refresh} />}
         {tab === 'issues' && <Issues onChanged={refresh} />}
         {tab === 'settings' && <Settings auth={auth} onChanged={refresh} />}
       </main>

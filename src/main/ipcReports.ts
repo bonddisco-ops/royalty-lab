@@ -6,6 +6,9 @@ import type { ApplyResult, ChannelMap, ImportItem, WizardInfo } from '../shared/
 import { backupDb } from './db/backup.ts';
 import { insertRow, updateRow } from './db/mutate.ts';
 import { uuidv7 } from './domain/ids.ts';
+import { applyBulk, listBatches, planBulk, revertBatch } from './reports/bulk.ts';
+import { editLine, revertLine, splitLine } from './reports/edits.ts';
+import { lineFacets, queryLines } from './reports/lines.ts';
 import { aliasUnknownArtist, createArtistFromUnknown, createTrackFromUnmatched, linkUnmatchedToTrack } from './reports/resolve.ts';
 import { CUSTOM_FIELDS, FIELD_TITLES, fingerprintOf, matchSavedFormat, parseCustom, proposeMapping, type CustomMapping, type Fingerprint } from './reports/custom.ts';
 import { detectBuiltin } from './reports/detect.ts';
@@ -144,6 +147,36 @@ export function registerReportsIpc(handle: HandleFn, getWindow: () => BrowserWin
     const s = requireSession();
     backupDb(s.db, s.open.file, s.paths.backups, 'before-report-delete');
     return deleteReport(s.db, s.ctx, reportId);
+  });
+
+  // ------------------------------------------------ таблица строк и правки (этап 3)
+  handle('lines:query', ({ filter, sort, offset, limit }) => queryLines(requireSession().db, filter, sort, offset ?? 0, Math.min(limit ?? 200, 500)));
+  handle('lines:facets', ({ quarter }) => lineFacets(requireSession().db, quarter));
+  handle('lines:edit', ({ lineId, field, value }) => {
+    const s = requireSession();
+    editLine(s.db, s.ctx, lineId, field, value);
+  });
+  handle('lines:split', ({ lineId, qtyMoved, toKind, rate }) => {
+    const s = requireSession();
+    splitLine(s.db, s.ctx, lineId, qtyMoved, toKind, rate);
+  });
+  handle('lines:revert', ({ lineId }) => {
+    const s = requireSession();
+    return revertLine(s.db, s.ctx, lineId);
+  });
+  handle('bulk:plan', ({ filter, action }) => {
+    const { items: _items, ...rest } = planBulk(requireSession().db, filter, action);
+    return rest;
+  });
+  handle('bulk:apply', ({ filter, action }) => {
+    const s = requireSession();
+    backupDb(s.db, s.open.file, s.paths.backups, 'before-bulk-edit');
+    return applyBulk(s.db, s.ctx, filter, action);
+  });
+  handle('bulk:list', () => listBatches(requireSession().db));
+  handle('bulk:revert', ({ batchId }) => {
+    const s = requireSession();
+    return revertBatch(s.db, s.ctx, batchId);
   });
 
   // ------------------------------------------------ мастер незнакомого формата

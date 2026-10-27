@@ -15,3 +15,7 @@ export const FLOW_LABELS: Record<string, string> = { artists: 'Приход ле
 export const SCOPE_LABELS: Record<string, string> = { authors: 'Авторские', related: 'Смежные', mixed: 'Авторские + смежные' };
 export const STREAM_LABELS: Record<string, string> = { paid: 'Платные стримы', ad: 'Рекламные стримы', other: 'Загрузки и прочее', nonstream: 'Без стримов' };
 export const quarterLabel = (q: string): string => (/^\d{4}Q[1-4]$/.test(q) ? `${q.slice(5)} кв. ${q.slice(0, 4)}` : q || '—');
+export const STREAM_SHORT: Record<string, string> = { paid: 'Платный', ad: 'Рекламный', other: 'Прочее', nonstream: 'Без стримов' };
+export const RIGHTS_SHORT: Record<string, string> = { authors: 'Авт.', related: 'Смеж.', mixed: 'Авт.+смеж.' };
+/** Копейки → «125,40» для поля ввода. */
+export const kopToInput = (kop: number): string => (kop / 100).toFixed(2).replace('.', ',');
