@@ -104,7 +104,7 @@ export function parseCustom(wb: WorkbookData, m: CustomMapping): ParsedReport {
   for (let i = m.headerRow + 1; i < s.rows.length; i++) {
     const row = s.rows[i]!;
     if (row.every((x) => x === null || str(x) === null)) continue;
-    if (row.some((x) => typeof x === 'string' && /^(итого|итог|total)\b/i.test(x.trim()))) continue; // строка итогов
+    if (row.some((x) => typeof x === 'string' && /^(итого|итог|total)(?!\p{L})/iu.test(x.trim()))) continue; // строка итогов
     const royalty = num(g(row, 'royalty'));
     if (royalty === null) {
       warnings.push(`Строка ${i + 1}: нет числа в колонке суммы, пропущена`);

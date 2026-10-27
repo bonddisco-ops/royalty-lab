@@ -214,3 +214,15 @@ test('мастер незнакомого формата: догадка по з
   assert.ok(matchSavedFormat(wb, [{ id: 'f1', fingerprint: fp, mapping: p.mapping }]));
   assert.equal(matchSavedFormat({ ...wb, sheets: [{ name: 'Лист1', rows: [[], [], ['другая', 'шапка']] }] }, [{ id: 'f1', fingerprint: fp, mapping: p.mapping }]), null);
 });
+
+import { readXlsxBuffer } from './xlsx.ts';
+import { miniXlsx } from '../../test/miniXlsx.ts';
+
+test('чтение .xlsx: общие строки, форматированный текст, даты, пустые ячейки, пропуски строк', () => {
+  const wb = readXlsxBuffer(miniXlsx(), 'x.xlsx');
+  assert.equal(wb.sheets[0]!.name, 'Данные & итог');
+  const rows = wb.sheets[0]!.rows;
+  assert.deepEqual(rows[0], ['Артист', null, 'inline']);
+  assert.deepEqual(rows[1], []);
+  assert.deepEqual(rows[2], ['Song A', 12.5, '2026-07-01', '2026-07-01 12:00:00', true, null, ' a & b ']);
+});

@@ -3,7 +3,12 @@ import type { Row } from '../main/db/types.ts';
 import type { Role } from '../main/crypto/keys.ts';
 import type { ArtistListItem, Dashboard, IssueView, PersonDetail, PersonListItem, TrackView } from '../main/repo.ts';
 import type { PlanSummary } from '../main/seed/starterPlan.ts';
+import type { ImportPreview } from '../main/reports/importer.ts';
+import type { CustomField, CustomMapping } from '../main/reports/custom.ts';
+import type { QuarterPanel, ReportListItem } from '../main/reports/queries.ts';
+import type { Flow } from '../main/reports/types.ts';
 
+export type { ImportPreview, CustomField, CustomMapping, QuarterPanel, ReportListItem, Flow };
 export type { Role, ArtistListItem, Dashboard, IssueView, PersonDetail, PersonListItem, TrackView, PlanSummary, Row };
 
 export type DataState = 'setup' | 'missing' | 'busy' | 'ok';
@@ -38,12 +43,59 @@ export interface StarterResult {
   summary: PlanSummary;
   backup: string;
 }
+export interface ImportItem {
+  id: string;
+  fileName: string;
+  state: 'ready' | 'unknown' | 'error';
+  error?: string;
+  preview?: ImportPreview;
+}
+export interface WizardInfo {
+  sheets: string[];
+  sheet: string;
+  headerRow: number;
+  headers: string[];
+  sample: Array<Array<string | number | boolean | null>>;
+  mapping: CustomMapping;
+  fieldTitles: Record<CustomField, string>;
+}
+export interface ApplyResult {
+  id: string;
+  fileName: string;
+  ok: boolean;
+  error?: string;
+  lines?: number;
+  rowsKop?: number;
+  issues?: number;
+  versionNo?: number;
+}
+export interface TrackHit {
+  id: string;
+  title: string;
+  isrc: string | null;
+  artists: string[];
+}
+
 export interface Credentials {
   login: string;
   password: string;
 }
 
 export interface ChannelMap {
+  'reports:pick': [void, ImportItem[]];
+  'reports:setOptions': [{ id: string; flow?: Flow; quarter?: string }, ImportItem];
+  'reports:apply': [{ ids: string[] }, ApplyResult[]];
+  'reports:discard': [{ id: string }, void];
+  'reports:list': [{ quarter?: string }, ReportListItem[]];
+  'reports:panel': [{ quarter?: string }, QuarterPanel];
+  'reports:setFlow': [{ reportId: string; flow: Flow }, void];
+  'wizard:info': [{ id: string; sheet?: string; headerRow?: number }, WizardInfo];
+  'wizard:apply': [{ id: string; mapping: CustomMapping }, ImportItem];
+  'tracks:search': [{ q: string }, TrackHit[]];
+  'issues:linkTrack': [{ issueId: string; trackId: string }, { lines: number }];
+  'issues:createTrack': [{ issueId: string }, { trackId: string }];
+  'issues:createArtist': [{ issueId: string; name?: string }, string];
+  'issues:aliasArtist': [{ issueId: string; artistId: string }, void];
   'data:pick': [void, FolderPick | null];
   'data:setup': [{ parent: string | null }, AuthStatus];
   'data:relocate': [void, AuthStatus];

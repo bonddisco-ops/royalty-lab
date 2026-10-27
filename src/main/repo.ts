@@ -379,6 +379,11 @@ function issueLabel(db: Db, r: Row, d: Row): string {
     case 'contract': return get('SELECT number FROM contract WHERE id = ?', r.entity_id)?.number ?? d.subject ?? '';
     case 'counterparty': { const c = get('SELECT * FROM counterparty WHERE id = ?', r.entity_id); return c ? personDisplay(c) : d.who ?? ''; }
     case 'participation': return `${d.artist ?? ''} — ${d.track ?? ''}`;
+    case 'report_version': {
+      const v = get(`SELECT d.name AS dn, r.quarter, r.rights_scope FROM report_version v JOIN report r ON r.id = v.report_id JOIN distributor d ON d.id = r.distributor_id WHERE v.id = ?`, r.entity_id);
+      const scope = v?.rights_scope === 'authors' ? 'авторские' : v?.rights_scope === 'related' ? 'смежные' : 'авт.+смеж.';
+      return v ? `${v.dn} ${v.quarter} (${scope})` : '';
+    }
     default: return d.who ?? '';
   }
 }
@@ -432,4 +437,31 @@ export function setSetting(db: Db, ctx: Ctx, id: string, value: string): void {
   if (id === 'hidden_deduction' && (parseDec(value) === null || parseDec(value)! < 0n || parseDec(value)! >= DEC_ONE)) throw new Error('Скрытый вычет: число от 0 до 1');
   if (id === 'auto_lock_minutes' && !/^\d+$/.test(value)) throw new Error('Автоблокировка: целое число минут (0 = выключена)');
   mutate(db, ctx, [{ kind: 'update', table: 'settings', id, patch: { value } }]);
+}
+
+// ------------------------------------------------------------ поиск трека (привязка из «Проверить»)
+
+export interface TrackHit {
+  id: string;
+  title: string;
+  isrc: string | null;
+  artists: string[];
+}
+
+export function searchTracks(db: Db, q: string, limit = 30): TrackHit[] {
+  const needle = normKey(q);
+  if (!needle) return [];
+  const hits: TrackHit[] = [];
+  const tracks = db.prepare('SELECT id, title, isrc FROM track WHERE deleted_at IS NULL ORDER BY title').all();
+  const arts = db.prepare('SELECT p.track_id, a.name FROM participation p JOIN artist a ON a.id = p.artist_id WHERE p.deleted_at IS NULL').all();
+  const byTrack = new Map<string, string[]>();
+  for (const a of arts) byTrack.set(a.track_id, [...(byTrack.get(a.track_id) ?? []), a.name]);
+  for (const t of tracks) {
+    const names = byTrack.get(t.id) ?? [];
+    if (normKey([t.title, t.isrc ?? '', ...names].join(' ')).includes(needle)) {
+      hits.push({ id: t.id, title: t.title, isrc: t.isrc, artists: names });
+      if (hits.length >= limit) break;
+    }
+  }
+  return hits;
 }

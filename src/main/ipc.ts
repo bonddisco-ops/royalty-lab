@@ -13,6 +13,7 @@ import { uuidv7 } from './domain/ids.ts';
 import { dataPaths, ensureDataDirs, type DataPaths } from './paths.ts';
 import { readPhoto, removePhoto, savePhoto } from './photos.ts';
 import * as repo from './repo.ts';
+import { registerReportsIpc } from './ipcReports.ts';
 import { buildStarterPlan, type StarterPlan } from './seed/starterPlan.ts';
 import { readStarterWorkbook } from './seed/starterReader.ts';
 import { writeStarterPlan } from './seed/starterWrite.ts';
@@ -250,6 +251,8 @@ export function registerIpc(profileDir: string, getWindow: () => BrowserWindow |
     repo.setSetting(db(), ctx(), id, value);
     if (id === 'auto_lock_minutes') reschedule();
   });
+
+  registerReportsIpc(handle, getWindow);
 
   // ---------------------------------------------------- стартовая база (этап 1)
   handle('starter:pick', async (): Promise<StarterPreview | null> => {
