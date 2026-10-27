@@ -4,7 +4,7 @@ body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 system-
 button, input, select, textarea { font:inherit; color:inherit; }
 button { background:var(--panel2); border:1px solid var(--line); padding:6px 12px; border-radius:6px; cursor:pointer; }
 button:hover { border-color:var(--accent); }
-button.primary { background:var(--accent); color:#1a130a; border-color:var(--accent); font-weight:600; }
+button.primary { background:var(--accent); color:var(--on-accent); border-color:var(--accent); font-weight:600; }
 button.link { background:none; border:none; color:var(--accent); padding:0 4px; }
 button:disabled { opacity:.5; cursor:default; }
 input, select, textarea { background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:6px 8px; width:100%; }
@@ -28,7 +28,7 @@ td { padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
 .login { max-width:340px; margin:12vh auto; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:26px; display:flex; flex-direction:column; gap:10px; }
 .grid2 { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:10px 16px; } label.f { display:flex; flex-direction:column; gap:3px; font-size:12px; color:var(--dim); }
 label.f.bad input { border-color:var(--bad); }
-.modal { position:fixed; inset:0; background:#000a; display:flex; justify-content:center; align-items:flex-start; padding:5vh 20px; overflow:auto; z-index:10; }
+.modal { position:fixed; inset:0; background:#0009; display:flex; justify-content:center; align-items:flex-start; padding:5vh 20px; overflow:auto; z-index:10; }
 .dialog { background:var(--bg); border:1px solid var(--line); border-radius:12px; padding:22px; width:min(900px,100%); }
 .row { display:flex; gap:10px; align-items:center; } .row.end { justify-content:flex-end; margin-top:16px; }
 .part { display:grid; grid-template-columns:1.6fr 80px 80px 80px 1.2fr auto; gap:8px; align-items:center; margin:4px 0; }
@@ -54,7 +54,23 @@ label.f.bad input { border-color:var(--bad); }
 .ctr-doc .chip-in { width: 90px; font: inherit; }
 .ctr-t { width: 100%; border-collapse: collapse; } .ctr-t td { border: 1px solid #999; padding: 4px; vertical-align: top; }
 .chk { display: flex; gap: 6px; align-items: flex-start; margin: 4px 0; }
-.warn { background: #3a2f10; color: #ffd98a; padding: 8px 12px; border-radius: 6px; margin: 8px 0; }
+.warn { background: var(--warn-bg); color: var(--warn-fg); padding: 8px 12px; border-radius: 6px; margin: 8px 0; }
 .ag { border-collapse: collapse; } .ag td, .ag th { padding: 2px; font-size: 12px; } .ag input { width: 100%; min-width: 60px; box-sizing: border-box; }
-.ag input.empty { outline: 1px solid #b07d00; }
+.ag input.empty { outline: 1px solid var(--accent); }
 .pop { position: absolute; top: 100%; left: 0; z-index: 5; background: var(--bg, #222); border: 1px solid var(--line); border-radius: 6px; display: flex; flex-direction: column; padding: 4px; }
+
+/* Темы: логотип и глянец Luxe */
+.brand { color: var(--logo); }
+:root[data-gloss='1'] body { background: linear-gradient(180deg, #1c1c21 0%, #0a0a0c 45%, #141418 100%) fixed; }
+:root[data-gloss='1'] .card, :root[data-gloss='1'] .dialog, :root[data-gloss='1'] .side { border-color: var(--line); box-shadow: inset 0 1px 0 #ffe9b025, 0 6px 18px #0008; }
+:root[data-gloss='1'] button.primary { background: linear-gradient(180deg, #ffdc8c, #d6af50 55%, #96783c); }
+.themepick { width: 100%; margin: 0 0 6px; padding: 4px 6px; font-size: 12px; }
+
+/* Поиск в списках, сортировка */
+.ss { position: relative; min-width: 180px; }
+.ss-list { position: absolute; z-index: 20; top: 100%; left: 0; right: 0; min-width: 220px; max-height: 260px; overflow: auto; background: var(--panel); border: 1px solid var(--accent); border-radius: 6px; margin-top: 2px; box-shadow: 0 8px 20px #0007; }
+.ss-opt { padding: 6px 10px; cursor: pointer; } .ss-opt.on { background: var(--panel2); color: var(--accent); }
+th.sortable { cursor: pointer; user-select: none; } th.sortable:hover { color: var(--accent); }
+.fix { white-space: nowrap; } .redrow td { background: color-mix(in srgb, var(--bad) 14%, transparent); }
+button.badge { cursor: pointer; font: inherit; font-size: 12px; padding: 1px 8px; }
+button.badge.bad:hover { background: color-mix(in srgb, var(--bad) 20%, transparent); }

@@ -27,7 +27,7 @@ export function Login({ auth, onAuth }: { auth: AuthStatus; onAuth: (a: AuthStat
 
   return (
     <form className="login" onSubmit={submit}>
-      <div style={{ textAlign: 'center' }}><Logo size={72} color="#5f5c60" /></div>
+      <div style={{ textAlign: 'center' }}><Logo size={72} /></div>
       <h1 style={{ color: 'var(--accent)' }}>Royalty Lab</h1>
       {first && <div className="dim">Первый запуск: создайте владельца. Пароль нигде не хранится — потеряете его, данные не восстановить.</div>}
       <input placeholder="Логин" value={login} onChange={(e) => setLogin(e.target.value)} autoFocus={!login} />

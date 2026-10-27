@@ -54,10 +54,10 @@ const P = [
   '686,171 650,183 644,191 646,201 664,225 668,225',
 ];
 
-export function Logo({ size = 28, color = 'currentColor' }: { size?: number; color?: string }) {
+export function Logo({ size = 28, color = 'var(--logo, currentColor)' }: { size?: number; color?: string }) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="243 165 514 534" width={size * 514 / 534} height={size} aria-hidden="true">
-      <g fill={color} stroke={color} strokeWidth="0.6" strokeLinejoin="round">{P.map((p, i) => <polygon key={i} points={p} />)}</g>
+      <g style={{ fill: color, stroke: color }} strokeWidth="0.6" strokeLinejoin="round">{P.map((p, i) => <polygon key={i} points={p} />)}</g>
     </svg>
   );
 }

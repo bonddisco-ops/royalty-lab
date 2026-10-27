@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ImportItem, QuarterPanel, ReportListItem, VersionItem } from '../../../shared/api.ts';
 import { call } from '../api.ts';
+import { useNav } from '../nav.tsx';
 import { FLOW_LABELS, SCOPE_LABELS, fmtInt, fmtKop, quarterLabel } from '../util.ts';
 import { ReportImport } from './ReportImport.tsx';
 
 export function Reports({ onChanged }: { onChanged: () => void }) {
+  const nav = useNav();
   const [quarter, setQuarter] = useState<string | undefined>(undefined);
   const [panel, setPanel] = useState<QuarterPanel | null>(null);
   const [list, setList] = useState<ReportListItem[]>([]);
@@ -54,7 +56,7 @@ export function Reports({ onChanged }: { onChanged: () => void }) {
             {(['artists', 'personal', 'ignore'] as const).map((f) => (
               <div key={f} className="card"><div className="n" style={{ fontSize: 20 }}>{fmtKop(panel.totalsByFlow[f])}</div><div className="l">{FLOW_LABELS[f]}</div></div>
             ))}
-            <div className="card"><div className="n">{panel.openIssues}</div><div className="l">вопросов в «Проверить»</div></div>
+            <div className="card" style={{ cursor: 'pointer' }} onClick={() => nav.go('issues', {})}><div className="n">{panel.openIssues}</div><div className="l">вопросов в «Проверить»</div></div>
           </div>
           <h3>Дистрибьюторы за {quarterLabel(panel.quarter)}</h3>
           <div className="cards">
@@ -76,7 +78,7 @@ export function Reports({ onChanged }: { onChanged: () => void }) {
                 <td>{fmtInt(r.rows)}</td><td>{fmtKop(r.rowsKop)}</td>
                 <td>{r.footerKop === null ? <span className="dim">нет</span> : r.footerOk ? <span className="badge ok">✓</span> : <span className="badge bad">{fmtKop(r.footerKop)}</span>}</td>
                 <td><select value={r.flow} onChange={(e) => setFlow(r.reportId, e.target.value as 'artists' | 'personal' | 'ignore')}>{Object.entries(FLOW_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></td>
-                <td className="dim">{r.fileName}{r.openIssues > 0 && <span className="badge bad">{r.openIssues}</span>}</td>
+                <td className="dim">{r.fileName}{r.openIssues > 0 && <button className="badge bad" title="Открыть проблемы этого отчёта" onClick={() => nav.go('issues', { reportVersionId: r.versionId })}>{r.openIssues}</button>}</td>
                 <td><button className="link" onClick={() => setDel(r)}>удалить</button></td>
               </tr>))}</tbody>
           </table>

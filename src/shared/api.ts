@@ -132,8 +132,10 @@ export interface ChannelMap {
   'payouts:view': [{ quarter?: string }, PayoutsView];
   'payouts:mark': [{ quarter: string; groupKey: string; status: 'draft' | 'ready' | 'paid'; paidKop?: number | null; paidDate?: string | null }, void];
   'payouts:generate': [{ quarter: string; groupKeys: string[]; city?: string; date?: string; round?: 'down' | 'up' | 'nearest' }, GenerateResult[]];
+  'payouts:deleteStatement': [{ quarter: string; groupKey: string }, { versionNo: number; files: number }];
   'payouts:open': [{ path: string }, void];
   'contracts:list': [void, ContractListItem[]];
+  'contracts:missing': [void, Array<{ id: string; person: string; status: string }>];
   'contracts:fields': [void, FieldDef[]];
   'contracts:new': [{ counterpartyId: string }, ContractDetail];
   'contracts:get': [{ id: string }, ContractDetail];
@@ -148,6 +150,7 @@ export interface ChannelMap {
   'tracks:search': [{ q: string }, TrackHit[]];
   'issues:linkTrack': [{ issueId: string; trackId: string }, { lines: number }];
   'issues:createTrack': [{ issueId: string }, { trackId: string }];
+  'issues:createMissing': [{ issueIds?: string[] }, { created: number; withArtist: number; withRate: number; skipped: number; lines: number }];
   'issues:createArtist': [{ issueId: string; name?: string }, string];
   'issues:aliasArtist': [{ issueId: string; artistId: string }, void];
   'data:pick': [void, FolderPick | null];
@@ -170,6 +173,7 @@ export interface ChannelMap {
   'people:list': [{ q?: string }, PersonListItem[]];
   'people:get': [{ id: string; reveal?: boolean }, PersonDetail];
   'people:create': [Row, string];
+  'people:addArtist': [{ personId: string; artistId?: string; name?: string }, string];
   'people:update': [{ id: string; patch: Row }, void];
   'artists:list': [{ q?: string }, ArtistListItem[]];
   'artists:create': [{ name: string; counterparty_id?: string | null }, string];
@@ -182,7 +186,7 @@ export interface ChannelMap {
   'parts:update': [{ id: string; patch: Row }, void];
   'parts:remove': [{ id: string }, void];
   'parts:fix': [{ trackId: string; participationId: string }, void];
-  'issues:list': [{ status?: 'open' | 'resolved' | 'ignored'; kind?: string }, IssueView[]];
+  'issues:list': [{ status?: 'open' | 'resolved' | 'ignored'; kind?: string; reportVersionId?: string }, IssueView[]];
   'issues:resolve': [{ id: string; status: 'open' | 'resolved' | 'ignored'; note?: string }, void];
   'history:get': [{ table: string; id: string }, Row[]];
   'settings:get': [void, Record<string, string>];

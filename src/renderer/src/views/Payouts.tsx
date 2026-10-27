@@ -1,6 +1,8 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import type { GenerateResult, PayoutRow, PayoutsView, Problem } from '../../../shared/api.ts';
 import { call } from '../api.ts';
+import { useNav } from '../nav.tsx';
+import { norm, useSort } from '../sort.tsx';
 import { fmtInt, fmtKop, kopToInput, quarterLabel } from '../util.ts';
 
 const PROBLEM_TITLES: Record<Problem['kind'], string> = {
@@ -10,13 +12,18 @@ const PROBLEM_TITLES: Record<Problem['kind'], string> = {
 const STATUS: Record<PayoutRow['status'], string> = { draft: 'черновик', ready: 'готово', paid: 'выплачено' };
 const today = (): string => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
-export function Payouts({ onChanged, goto }: { onChanged: () => void; goto: (t: string) => void }) {
+export function Payouts({ onChanged }: { onChanged: () => void }) {
   const [quarter, setQuarter] = useState<string | undefined>(undefined);
   const [view, setView] = useState<PayoutsView | null>(null);
   const [err, setErr] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const [paying, setPaying] = useState<PayoutRow | null>(null);
   const [gen, setGen] = useState<PayoutRow[] | null>(null);
+  const [fq, setFq] = useState('');
+  const [delRow, setDelRow] = useState<PayoutRow | null>(null);
+  const nav = useNav();
+  const filtered = (view?.rows ?? []).filter((r) => !fq.trim() || norm(`${r.payeeName} ${r.contractNumber ?? ''} ${r.artists.map((a) => a.name).join(' ')}`).includes(norm(fq.trim())));
+  const { sorted, th } = useSort(filtered, { payee: (r) => r.payeeName, contract: (r) => r.contractNumber, accrued: (r) => r.accruedKop, carriedIn: (r) => r.carriedInKop, payable: (r) => r.payableKop, carriedOut: (r) => r.carriedOutKop, status: (r) => r.status, stmt: (r) => r.statement?.versionNo ?? 0 });
   const load = useCallback(() => { void call('payouts:view', { quarter }).then(setView).catch((e: Error) => setErr(e.message)); }, [quarter]);
   useEffect(load, [load]);
   if (!view) return <div className="dim">Загрузка…</div>;
@@ -32,6 +39,7 @@ export function Payouts({ onChanged, goto }: { onChanged: () => void; goto: (t: 
             {view.quarters.map((q) => <option key={q} value={q}>{quarterLabel(q)}</option>)}
           </select>
         )}
+        <input style={{ maxWidth: 260 }} placeholder="Поиск по ФИО, договору, артисту…" value={fq} onChange={(e) => setFq(e.target.value)} />
         <div className="grow" />
         <button className="primary" disabled={ready.length === 0} onClick={() => setGen(ready)}>Сформировать комплекты для всех ({ready.length})</button>
       </div>
@@ -54,17 +62,21 @@ export function Payouts({ onChanged, goto }: { onChanged: () => void; goto: (t: 
               <table><tbody>{view.calc.problems.map((p, i) => (
                 <tr key={i}><td><span className="badge bad">{PROBLEM_TITLES[p.kind]}</span></td><td>{p.text}</td>
                   <td className="dim">{p.rows > 0 ? `${fmtInt(p.rows)} строк, ${fmtKop(p.royaltyKop)}` : ''}</td>
-                  <td>{(p.kind === 'no_track') && <button className="link" onClick={() => goto('issues')}>в «Проверить»</button>}</td></tr>))}</tbody></table>
+                  <td>{(p.kind === 'no_track') && <button className="link" onClick={() => nav.go('issues', {})}>Исправить в «Проверить» →</button>}
+                  {(p.kind === 'no_contract') && <button className="link" onClick={() => nav.go('contracts', {})}>Создать договор →</button>}
+                  {(p.kind === 'no_payee') && <button className="link" onClick={() => nav.go('artists', {})}>Привязать артиста к человеку →</button>}
+                  {(p.kind === 'no_participation' || p.kind === 'no_rate' || p.kind === 'mixed_share_mismatch') && <button className="link" onClick={() => nav.go('tracks', {})}>Открыть треки →</button>}
+                  {(p.kind === 'no_threshold_contract') && <button className="link" onClick={() => nav.go('contracts', {})}>Открыть договоры →</button>}</td></tr>))}</tbody></table>
             </>
           )}
           <h3>Получатели за {quarterLabel(view.quarter)}</h3>
           <table>
-            <thead><tr><th>Получатель</th><th>Договор</th><th style={{ textAlign: 'right' }}>Начислено</th><th style={{ textAlign: 'right' }}>Перенос с прошлых</th><th style={{ textAlign: 'right' }}>К выплате</th><th style={{ textAlign: 'right' }}>Переносится дальше</th><th>Статус</th><th>Комплект</th><th /></tr></thead>
-            <tbody>{view.rows.map((r) => (
+            <thead><tr>{th('payee', 'Получатель')}{th('contract', 'Договор')}{th('accrued', 'Начислено', { textAlign: 'right' })}{th('carriedIn', 'Перенос с прошлых', { textAlign: 'right' })}{th('payable', 'К выплате', { textAlign: 'right' })}{th('carriedOut', 'Переносится дальше', { textAlign: 'right' })}{th('status', 'Статус')}{th('stmt', 'Комплект')}<th /></tr></thead>
+            <tbody>{sorted.map((r) => (
               <Fragment key={r.key}>
                 <tr>
                   <td><button className="link" style={{ padding: 0 }} onClick={() => setOpen(open === r.key ? null : r.key)}>{open === r.key ? '▾' : '▸'}</button> {r.payeeName}</td>
-                  <td>{r.contractNumber ?? <span className="badge bad">нет договора</span>}</td>
+                  <td>{r.contractNumber ?? <button className="badge bad" title="Создать договор для этого получателя" onClick={() => nav.go('contracts', { contractFor: r.payeeId })}>нет договора — создать</button>}</td>
                   <td style={{ textAlign: 'right' }}>{fmtKop(r.accruedKop)}</td>
                   <td style={{ textAlign: 'right' }} className="dim">{r.carriedInKop ? fmtKop(r.carriedInKop) : ''}</td>
                   <td style={{ textAlign: 'right' }}><b>{fmtKop(r.payableKop)}</b></td>
@@ -76,6 +88,7 @@ export function Payouts({ onChanged, goto }: { onChanged: () => void; goto: (t: 
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <button className="link" disabled={!r.contractId} title={r.contractId ? '' : 'Нужен договор у получателя'} onClick={() => setGen([r])}>{r.statement ? (r.statement.stale ? 'пересоздать' : 'ещё версия') : 'сформировать'}</button>
                     <button className="link" onClick={() => setPaying(r)}>выплата</button>
+                    {r.statement && <button className="link" title="Удалить последний выданный комплект (файлы тоже)" onClick={() => setDelRow(r)}>удалить комплект</button>}
                   </td>
                 </tr>
                 {open === r.key && (
@@ -88,6 +101,15 @@ export function Payouts({ onChanged, goto }: { onChanged: () => void; goto: (t: 
             ))}</tbody>
           </table>
         </>
+      )}
+      {delRow && (
+        <div className="modal"><div className="dialog" style={{ maxWidth: 520 }}>
+          <h2>Удалить комплект?</h2>
+          <p>{delRow.payeeName} · {quarterLabel(view.quarter)} · версия {delRow.statement!.versionNo}<br />Файлы PDF и Excel этой версии будут стёрты. Если была более ранняя версия, она снова станет текущей. Потом можно сформировать комплект заново.</p>
+          <div className="row end"><button onClick={() => setDelRow(null)}>Отмена</button><button className="primary" onClick={async () => {
+            try { await call('payouts:deleteStatement', { quarter: view.quarter, groupKey: delRow.key }); setDelRow(null); after(); } catch (e) { setErr((e as Error).message); setDelRow(null); }
+          }}>Удалить</button></div>
+        </div></div>
       )}
       {paying && <PayDialog row={paying} quarter={view.quarter} onClose={(ch) => { setPaying(null); if (ch) after(); }} />}
       {gen && <GenDialog rows={gen} quarter={view.quarter} onClose={(ch) => { setGen(null); if (ch) after(); }} />}

@@ -32,6 +32,6 @@ export const ISSUE_LABELS: Record<string, string> = {
   no_contract: 'Нет договора', missing_pii: 'Не хватает данных', missing_rate: 'Нет ставки', whitespace: 'Лишние пробелы',
   isrc_title_conflict: 'Конфликт ISRC/названия', share_sum: 'Сумма долей ≠ 100%', no_appendix: 'Нет приложения',
   unmatched_track: 'Трек не найден', unknown_artist: 'Новый артист', not_reported_platform: 'Not reported',
-  footer_mismatch: 'Итог не сошёлся', edit_lost_on_replace: 'Правка потеряла строку', isrc_two_distributors: 'ISRC у двух дистрибьюторов',
+  footer_mismatch: 'Итог не сошёлся', new_track: 'Новый трек из отчёта', edit_lost_on_replace: 'Правка потеряла строку', isrc_two_distributors: 'ISRC у двух дистрибьюторов',
 };
 export const issueLabel = (k: string): string => ISSUE_LABELS[k] ?? k;

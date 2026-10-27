@@ -8,7 +8,7 @@ import type { Ctx, Db, Row } from '../db/types.ts';
 import { uuidv7 } from '../domain/ids.ts';
 import { normKey } from '../domain/normalize.ts';
 import type { Flow, ParsedLine, ParsedReport, RightsType, StreamKind } from './types.ts';
-import { toExactKop, toKop } from './util.ts';
+import { isIsrcLike, toExactKop, toKop } from './util.ts';
 
 // ------------------------------------------------------------------ агрегация
 
@@ -98,9 +98,11 @@ export function buildMatcher(db: Db): Matcher {
     else if (r.kind === 'title_artist') remembered.set(v, r.track_id);
   }
   const titles = new Map<string, string[]>();
-  for (const t of db.prepare('SELECT id, title FROM track WHERE deleted_at IS NULL').all()) {
+  const hasIsrc = new Set<string>();
+  for (const t of db.prepare('SELECT id, title, isrc FROM track WHERE deleted_at IS NULL').all()) {
     const k = normKey(t.title);
     if (k) titles.set(k, [...(titles.get(k) ?? []), t.id]);
+    if (t.isrc) hasIsrc.add(t.id);
   }
   const known = new Set<string>();
   const idToArtistNames = new Map<string, Set<string>>();
@@ -129,8 +131,9 @@ export function buildMatcher(db: Db): Matcher {
       if (l.code && byCode.has(l.code)) return { trackId: byCode.get(l.code)!, how: 'code' };
       const key = `${normKey(l.titleRaw)}|${normKey(l.artistRaw)}`;
       if (remembered.has(key)) return { trackId: remembered.get(key)!, how: 'remembered' };
-      if (l.isrc || l.code) return { trackId: null, how: null }; // у строки есть код, но он неизвестен: не гадаем по названию
-      const cands = titles.get(normKey(l.titleRaw)) ?? [];
+      const withCode = !!(l.isrc || l.code);
+      // у строки есть код, но он неизвестен: по названию ищем только среди треков каталога БЕЗ ISRC (у остальных код другой — не гадаем)
+      const cands = (titles.get(normKey(l.titleRaw)) ?? []).filter((id) => !withCode || !hasIsrc.has(id));
       if (cands.length === 1) {
         const arts = idToArtistNames.get(cands[0]!);
         const tokens = artistTokens(l.artistRaw);
@@ -163,6 +166,8 @@ export interface Analysis {
   footerKop: number | null;
   footerDiffKop: number | null;
   footerOk: boolean | null;
+  /** Строки узнаны по названию, а в отчёте есть ISRC/код: после загрузки запомним их у трека. */
+  learn: Array<{ trackId: string; isrc: string | null; code: string | null }>;
 }
 
 export function isNotReported(platform: string | null): boolean {
@@ -173,6 +178,7 @@ export function analyze(db: Db, parsed: ParsedReport, flow: Flow, distributorId:
   const agg = aggregate(parsed.lines);
   const matcher = buildMatcher(db);
   const matches: Array<string | null> = [];
+  const learn: Analysis['learn'] = [];
   const issues: IssueDraft[] = [];
   const unmatched = new Map<string, { title: string | null; artist: string | null; isrc: string | null; code: string | null; lines: number; kop: number; platforms: Set<string> }>();
   const unknownArtists = new Map<string, { lines: number; kop: number }>();
@@ -184,6 +190,7 @@ export function analyze(db: Db, parsed: ParsedReport, flow: Flow, distributorId:
   for (const l of agg) {
     const m = matcher.match(l);
     matches.push(m.trackId);
+    if (m.trackId && m.how === 'title' && (l.isrc || l.code)) learn.push({ trackId: m.trackId, isrc: l.isrc, code: l.code });
     if (m.trackId) matchedLines++;
     else {
       unmatchedLines++;
@@ -233,7 +240,7 @@ export function analyze(db: Db, parsed: ParsedReport, flow: Flow, distributorId:
     for (const r of rows) if (r.isrc && mine.has(String(r.isrc).toUpperCase())) (clash.get(String(r.isrc).toUpperCase()) ?? clash.set(String(r.isrc).toUpperCase(), new Set()).get(String(r.isrc).toUpperCase())!).add(r.distributor);
     for (const [isrc, ds] of clash) issues.push({ kind: 'isrc_two_distributors', details: { isrc, other_distributors: [...ds] } });
   }
-  return { agg, matches, issues, matchedLines, unmatchedLines, unmatchedKop, exactSum, rowsKop, footerKop, footerDiffKop, footerOk };
+  return { agg, matches, issues, matchedLines, unmatchedLines, unmatchedKop, exactSum, rowsKop, footerKop, footerDiffKop, footerOk, learn };
 }
 
 // -------------------------------------------------------------------- предпросмотр
@@ -419,6 +426,7 @@ export function commitImport(db: Db, ctx: Ctx, inp: ImportInput, opts: CommitOpt
         ins.run(uuidv7(), versionId, l.rowKey, l.rightsType, a.matches[i] ?? null, l.artistRaw, l.titleRaw, l.isrc, l.upc, l.code, l.platform, l.usageType, l.usageModel,
           l.streamKind, l.country, l.periodMonth, l.qty, l.royaltyKop, toExactKop(l.royaltyExact), l.currencyOrig, l.amountOrig, JSON.stringify({ ...l.raw, merged: l.merged, firstRow: l.firstRow }));
       });
+      learnIdentifiers(db, ctx, a.learn);
       for (const iss of a.issues) {
         insertRow(db, ctx, 'issue', { kind: iss.kind, entity_type: 'report_version', entity_id: versionId, report_version_id: versionId, details_json: iss.details, status: 'open' });
       }
@@ -431,6 +439,26 @@ export function commitImport(db: Db, ctx: Ctx, inp: ImportInput, opts: CommitOpt
       if (!used) rmSync(storedAbs, { force: true });
     }
     throw e;
+  }
+}
+
+/** Трек узнан по названию — запоминаем ISRC (если у трека его не было) и код дистрибьютора, чтобы следующие отчёты находили его сами. */
+export function learnIdentifiers(db: Db, ctx: Ctx, learn: Analysis['learn']): void {
+  const done = new Set<string>();
+  for (const x of learn) {
+    const key = `${x.trackId}|${x.isrc ?? ''}|${x.code ?? ''}`;
+    if (done.has(key)) continue;
+    done.add(key);
+    const t = db.prepare('SELECT isrc FROM track WHERE id = ?').get(x.trackId);
+    const addIdent = (kind: string, value: string) => {
+      if (!db.prepare('SELECT 1 FROM track_identifier WHERE kind = ? AND value_norm = ? AND deleted_at IS NULL').get(kind, value)) insertRow(db, ctx, 'track_identifier', { track_id: x.trackId, kind, value_norm: value });
+    };
+    if (x.isrc) {
+      const used = db.prepare('SELECT 1 FROM track WHERE isrc = ? AND deleted_at IS NULL').get(x.isrc);
+      if (t && !t.isrc && isIsrcLike(x.isrc) && !used) updateRow(db, ctx, 'track', x.trackId, { isrc: x.isrc });
+      else addIdent('isrc', x.isrc);
+    }
+    if (x.code) addIdent('distributor_code', x.code.replace(/\s+/g, '').toUpperCase());
   }
 }
 

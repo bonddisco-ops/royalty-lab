@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AppendixDraft, AppendixListItem, Block, ContractDetail, ContractEdit, ContractListItem, ContractPreview, DraftTrack, FieldDef, PBlock, PersonListItem, Seg, TrackHit } from '../../../shared/api.ts';
 import { call } from '../api.ts';
+import { useNav } from '../nav.tsx';
+import { norm, useSort } from '../sort.tsx';
 
 type TrackRowT = DraftTrack['row'];
 const GROUPS: Array<[FieldDef['group'], string]> = [['money', 'Суммы и ставки'], ['reports', 'Отчёты и выплаты'], ['notice', 'Уведомления и сроки'], ['other', 'Прочее']];
@@ -8,33 +10,61 @@ const KIND: Record<string, string> = { ip: 'ИП', sz: 'самозанятый' 
 const fmtDate = (iso: string | null): string => (iso && /^\d{4}-\d{2}-\d{2}/.test(iso) ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}` : iso ?? '');
 
 export function Contracts({ onChanged }: { onChanged: () => void }) {
+  const nav = useNav();
   const [list, setList] = useState<ContractListItem[] | null>(null);
+  const [missing, setMissing] = useState<Array<{ id: string; person: string; status: string }>>([]);
   const [editing, setEditing] = useState<ContractDetail | null>(null);
   const [picking, setPicking] = useState(false);
+  const [q, setQ] = useState('');
   const [err, setErr] = useState('');
-  const load = useCallback(() => { void call('contracts:list').then(setList).catch((e: Error) => setErr(e.message)); }, []);
+  const load = useCallback(() => {
+    void call('contracts:list').then(setList).catch((e: Error) => setErr(e.message));
+    void call('contracts:missing').then(setMissing).catch(() => {});
+  }, []);
   useEffect(load, [load]);
   const open = (id: string) => { setErr(''); void call('contracts:get', { id }).then(setEditing).catch((e: Error) => setErr(e.message)); };
   const create = (counterpartyId: string) => { setPicking(false); setErr(''); void call('contracts:new', { counterpartyId }).then(setEditing).catch((e: Error) => setErr(e.message)); };
+  useEffect(() => {
+    const { contractFor, contractId } = nav.params;
+    if (contractFor) create(contractFor);
+    else if (contractId) open(contractId);
+    if (contractFor || contractId) nav.clear();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const needle = norm(q.trim());
+  const shown = (list ?? []).filter((c) => !needle || norm(`${c.person} ${c.number} ${c.date ?? ''}`).includes(needle));
+  const shownMissing = missing.filter((m) => !needle || norm(m.person).includes(needle));
+  const { sorted, th } = useSort(shown, { number: (c) => c.number, date: (c) => c.date, person: (c) => c.person, kind: (c) => c.kind, threshold: (c) => c.thresholdRub, apps: (c) => c.appendices });
   if (editing) return <Editor detail={editing} onClose={() => { setEditing(null); load(); onChanged(); }} />;
   return (
     <>
       <div className="bar">
         <h1 style={{ margin: 0 }}>Договоры</h1>
+        <input style={{ maxWidth: 300 }} placeholder="Поиск по имени, фамилии, номеру…" value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="grow" />
         <button className="primary" onClick={() => setPicking(true)}>Новый договор</button>
       </div>
       {err && <div className="err">{err}</div>}
-      {list && list.length === 0 && <div className="drop">Договоров пока нет. «Новый договор» — выберите человека (ИП или самозанятый) и откроется текст договора с полями, которые можно править.</div>}
-      {list && list.length > 0 && (
+      {list && list.length === 0 && missing.length === 0 && <div className="drop">Договоров пока нет. «Новый договор» — выберите человека (ИП или самозанятый) и откроется текст договора с полями, которые можно править.</div>}
+      {list && (list.length > 0 || missing.length > 0) && (
         <table>
-          <thead><tr><th>Номер</th><th>Дата</th><th>Человек</th><th>Статус</th><th>Порог, ₽</th><th>Приложений</th><th /></tr></thead>
-          <tbody>{list.map((c) => (
-            <tr key={c.id}>
-              <td>{c.number}</td><td>{fmtDate(c.date)}</td><td>{c.person}</td><td>{c.kind ? KIND[c.kind] ?? c.kind : '—'}</td>
-              <td>{c.thresholdRub === null ? '—' : c.thresholdRub.toLocaleString('ru-RU')}</td><td>{c.appendices}</td>
-              <td><button onClick={() => open(c.id)}>Открыть</button></td>
-            </tr>))}</tbody>
+          <thead><tr>{th('number', 'Номер')}{th('date', 'Дата')}{th('person', 'Человек')}{th('kind', 'Статус')}{th('threshold', 'Порог, ₽')}{th('apps', 'Приложений')}<th /></tr></thead>
+          <tbody>
+            {shownMissing.map((m) => {
+              const ok = m.status === 'ip' || m.status === 'sz';
+              return (
+                <tr key={'m' + m.id} className="redrow">
+                  <td colSpan={2}><span className="badge bad">договор не создан</span></td><td>{m.person}</td><td>{ok ? KIND[m.status] : '—'}</td><td colSpan={2} className="dim">{ok ? '' : 'сначала укажите статус ИП/самозанятый в карточке человека'}</td>
+                  <td>{ok ? <button className="primary" onClick={() => create(m.id)}>Создать договор</button> : <button onClick={() => nav.go('people', { personId: m.id })}>Открыть человека</button>}</td>
+                </tr>
+              );
+            })}
+            {sorted.map((c) => (
+              <tr key={c.id}>
+                <td>{c.number}</td><td>{fmtDate(c.date)}</td><td>{c.person}</td><td>{c.kind ? KIND[c.kind] ?? c.kind : '—'}</td>
+                <td>{c.thresholdRub === null ? '—' : c.thresholdRub.toLocaleString('ru-RU')}</td><td>{c.appendices}</td>
+                <td><button onClick={() => open(c.id)}>Открыть</button></td>
+              </tr>))}
+          </tbody>
         </table>
       )}
       {picking && <PersonPicker onPick={create} onClose={() => setPicking(false)} />}

@@ -3,9 +3,14 @@ import type { ArtistListItem, PersonListItem } from '../../../shared/api.ts';
 import { call } from '../api.ts';
 import { Avatar } from '../Avatar.tsx';
 import { PhotoEditor } from '../PhotoEditor.tsx';
+import { useNav } from '../nav.tsx';
+import { SearchSelect } from '../SearchSelect.tsx';
+import { useSort } from '../sort.tsx';
 
 export function Artists({ onChanged }: { onChanged: () => void }) {
-  const [q, setQ] = useState('');
+  const nav = useNav();
+  const [q, setQ] = useState(nav.params.query ?? '');
+  useEffect(() => { if (nav.params.query) nav.clear(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [rows, setRows] = useState<ArtistListItem[]>([]);
   const [people, setPeople] = useState<PersonListItem[]>([]);
   const [name, setName] = useState('');
@@ -16,24 +21,25 @@ export function Artists({ onChanged }: { onChanged: () => void }) {
   useEffect(() => { const h = setTimeout(load, 150); return () => clearTimeout(h); }, [load]);
   useEffect(() => { void call('people:list', {}).then(setPeople); }, []);
   const run = async (fn: () => Promise<unknown>) => { setErr(''); try { await fn(); load(); onChanged(); } catch (e) { setErr((e as Error).message); } };
+  const { sorted, th } = useSort(rows, { name: (a) => a.name, person: (a) => a.person, tracks: (a) => a.tracks, nocontract: (a) => (a.withoutContract ? 0 : 1) });
+  const opts = people.map((p) => ({ value: p.id, label: p.display, hint: p.artists.join(', ') }));
   return (
     <>
       <h1>Артисты</h1>
       <div className="bar">
-        <input placeholder="Поиск по имени и написаниям…" value={q} onChange={(e) => setQ(e.target.value)} /><div className="grow" /><span className="dim">{rows.length}</span>
+        <input placeholder="Поиск по имени и другим написаниям…" value={q} onChange={(e) => setQ(e.target.value)} /><div className="grow" /><span className="dim">{rows.length}</span>
         <input style={{ maxWidth: 200 }} placeholder="Новый артист" value={name} onChange={(e) => setName(e.target.value)} />
         <button disabled={!name.trim()} onClick={() => run(async () => { await call('artists:create', { name }); setName(''); })}>+ Артист</button>
       </div>
       {err && <div className="err">{err}</div>}
       <table>
-        <thead><tr><th>Артист</th><th>Человек (получатель)</th><th>Написания</th><th>Треков</th></tr></thead>
-        <tbody>{rows.map((a) => (
+        <thead><tr>{th('name', 'Артист')}{th('person', 'Человек (получатель)')}<th title="Как этого артиста могут назвать в отчётах дистрибьюторов: «Shtain», «ШТАЙН», «Shtain feat. X». Если имя из отчёта совпадёт с одним из написаний — строка сама привяжется к этому артисту.">Другие написания имени ⓘ</th>{th('tracks', 'Треков')}</tr></thead>
+        <tbody>{sorted.map((a) => (
           <tr key={a.id}>
-            <td><div className="nameCell"><Avatar file={a.photo} onClick={() => setPhotoFor(a)} title="Фото артиста" />{a.name}{a.withoutContract && <span className="badge bad">нет договора</span>}</div></td>
-            <td><select value={a.counterpartyId ?? ''} onChange={(e) => run(() => call('artists:update', { id: a.id, patch: { counterparty_id: e.target.value || null } }))}>
-              <option value="">— не привязан —</option>{people.map((p) => <option key={p.id} value={p.id}>{p.display}</option>)}</select></td>
+            <td><div className="nameCell"><Avatar file={a.photo} onClick={() => setPhotoFor(a)} title="Фото артиста" />{a.name}{a.withoutContract && <button className="badge bad" title="Создать договор" onClick={() => a.counterpartyId ? nav.go('contracts', { contractFor: a.counterpartyId }) : undefined}>{a.counterpartyId ? 'нет договора — создать' : 'не привязан к человеку'}</button>}</div></td>
+            <td><SearchSelect options={opts} value={a.counterpartyId ?? ''} empty="— не привязан —" placeholder="Фамилия…" onChange={(v) => run(() => call('artists:update', { id: a.id, patch: { counterparty_id: v || null } }))} /></td>
             <td>{a.variants.map((v) => <span key={v} className="badge">{v}</span>)}
-              <input style={{ width: 150 }} placeholder="+ написание" value={variant[a.id] ?? ''} onChange={(e) => setVariant({ ...variant, [a.id]: e.target.value })}
+              <input style={{ width: 150 }} placeholder="+ другое написание" value={variant[a.id] ?? ''} onChange={(e) => setVariant({ ...variant, [a.id]: e.target.value })}
                 onKeyDown={(e) => { if (e.key === 'Enter' && variant[a.id]?.trim()) void run(async () => { await call('artists:addVariant', { id: a.id, text: variant[a.id]! }); setVariant({ ...variant, [a.id]: '' }); }); }} /></td>
             <td className="dim">{a.tracks}</td>
           </tr>))}</tbody>

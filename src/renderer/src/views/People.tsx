@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { PersonDetail, PersonListItem } from '../../../shared/api.ts';
+import type { ArtistListItem, PersonDetail, PersonListItem } from '../../../shared/api.ts';
 import { call, FIELD_GROUPS, FIELD_LABELS } from '../api.ts';
 import { Avatar } from '../Avatar.tsx';
 import { PhotoEditor } from '../PhotoEditor.tsx';
+import { useNav } from '../nav.tsx';
+import { SearchSelect } from '../SearchSelect.tsx';
+import { useSort } from '../sort.tsx';
 
 function PersonDialog({ id, onClose }: { id: string | null; onClose: () => void }) {
+  const nav = useNav();
+  const [allArtists, setAllArtists] = useState<ArtistListItem[]>([]);
+  const [newArtist, setNewArtist] = useState('');
   const [det, setDet] = useState<PersonDetail | null>(null);
   const [edit, setEdit] = useState<Record<string, string>>({});
   const [reveal, setReveal] = useState(false);
@@ -18,6 +24,12 @@ function PersonDialog({ id, onClose }: { id: string | null; onClose: () => void 
     setEdit(Object.fromEntries(Object.entries(d.fields).map(([k, v]) => [k, v == null ? '' : String(v)])));
   }, [id]);
   useEffect(() => { void load(false); }, [load]);
+  useEffect(() => { if (id) void call('artists:list', { q: '' }).then(setAllArtists); }, [id]);
+  const addArtist = async (arg: { artistId?: string; name?: string }) => {
+    if (!id) return;
+    setErr('');
+    try { await call('people:addArtist', { personId: id, ...arg }); setNewArtist(''); await load(reveal); setAllArtists(await call('artists:list', { q: '' })); } catch (e) { setErr((e as Error).message); }
+  };
 
   const badFields = new Set((det?.checks ?? []).map((c) => c.field));
   async function save() {
@@ -45,8 +57,20 @@ function PersonDialog({ id, onClose }: { id: string | null; onClose: () => void 
             <input value={edit[f] ?? ''} disabled={!editable} onChange={(e) => setEdit({ ...edit, [f]: e.target.value })} />
           </label>))}</div></div>
       ))}
-      {det && det.artists.length > 0 && (<><h3>Артисты</h3><div>{det.artists.map((a) => <span key={a.id} className="badge">{a.name}</span>)}</div></>)}
-      {det && det.contracts.length > 0 && (<><h3>Договоры</h3><ul className="plain">{det.contracts.map((c) => <li key={c.id}>{c.number} <span className="dim">{c.date ?? 'без даты'} · {c.kind}{c.has_pdf ? '' : ' · PDF не приложен'}</span></li>)}</ul></>)}
+      {id && det && (<>
+        <h3>Артисты</h3>
+        <div>{det.artists.map((a) => <span key={a.id} className="badge">{a.name}</span>)}</div>
+        <div className="row" style={{ marginTop: 6 }}>
+          <SearchSelect width={260} options={allArtists.filter((a) => a.counterpartyId !== id).map((a) => ({ value: a.id, label: a.name, hint: a.person ?? 'свободный' }))} value="" placeholder="+ существующий артист…" onChange={(v) => v && void addArtist({ artistId: v })} />
+          <input style={{ maxWidth: 200 }} placeholder="или новый артист" value={newArtist} onChange={(e) => setNewArtist(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && newArtist.trim()) void addArtist({ name: newArtist.trim() }); }} />
+          <button disabled={!newArtist.trim()} onClick={() => void addArtist({ name: newArtist.trim() })}>+ артист</button>
+        </div>
+      </>)}
+      {id && det && (<>
+        <h3>Договоры</h3>
+        {det.contracts.length === 0 && <div className="row"><span className="badge bad">договор не создан</span><button className="primary" onClick={() => { onClose(); nav.go('contracts', { contractFor: id }); }}>Создать договор</button></div>}
+        <ul className="plain">{det.contracts.map((c) => <li key={c.id}>{c.number} <span className="dim">{c.date ?? 'без даты'} · {c.kind}{c.has_pdf ? '' : ' · PDF не приложен'}</span></li>)}</ul>
+      </>)}
       {err && <div className="err">{err}</div>}
       {photoOpen && id && <PhotoEditor table="counterparty" id={id} file={(det?.fields.photo_file as string | null) ?? null} title={det ? [det.fields.last_name, det.fields.first_name].filter(Boolean).join(' ') : ''} onClose={(ch) => { setPhotoOpen(false); if (ch) void load(reveal); }} />}
       <div className="row end"><button onClick={onClose}>Закрыть</button>{editable && <button className="primary" onClick={save}>Сохранить</button>}</div>
@@ -55,20 +79,23 @@ function PersonDialog({ id, onClose }: { id: string | null; onClose: () => void 
 }
 
 export function People({ onChanged }: { onChanged: () => void }) {
-  const [q, setQ] = useState('');
+  const nav = useNav();
+  const [q, setQ] = useState(nav.params.query ?? '');
   const [rows, setRows] = useState<PersonListItem[]>([]);
-  const [sel, setSel] = useState<string | null | undefined>(undefined);
+  const [sel, setSel] = useState<string | null | undefined>(nav.params.personId);
+  useEffect(() => { if (nav.params.personId || nav.params.query) nav.clear(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const load = useCallback(() => { void call('people:list', { q }).then(setRows); }, [q]);
   useEffect(() => { const h = setTimeout(load, 150); return () => clearTimeout(h); }, [load]);
+  const { sorted, th } = useSort(rows, { name: (p) => p.display, status: (p) => p.status, artists: (p) => p.artists.join(', '), contracts: (p) => p.contracts.length ? p.contracts.join(', ') : null, filled: (p) => p.filled / Math.max(1, p.total) });
   return (
     <>
       <h1>Люди</h1>
       <div className="bar"><input placeholder="Поиск по ФИО, артисту, номеру договора…" value={q} onChange={(e) => setQ(e.target.value)} /><div className="grow" /><span className="dim">{rows.length}</span><button onClick={() => setSel(null)}>+ Человек</button></div>
       <table>
-        <thead><tr><th>ФИО</th><th>Статус</th><th>Артисты</th><th>Договоры</th><th>Данные</th></tr></thead>
-        <tbody>{rows.map((p) => (
+        <thead><tr>{th('name', 'ФИО')}{th('status', 'Статус')}{th('artists', 'Артисты')}{th('contracts', 'Договоры')}{th('filled', 'Данные')}</tr></thead>
+        <tbody>{sorted.map((p) => (
           <tr key={p.id} className="click" onClick={() => setSel(p.id)}>
-            <td><div className="nameCell"><Avatar file={p.photo} />{p.display}</div></td><td className="dim">{p.status}</td><td>{p.artists.join(', ')}</td><td className="mono">{p.contracts.join(', ')}</td>
+            <td><div className="nameCell"><Avatar file={p.photo} />{p.display}</div></td><td className="dim">{p.status}</td><td>{p.artists.join(', ')}</td><td className="mono">{p.contracts.length ? p.contracts.join(', ') : <button className="badge bad" title="Создать договор" onClick={(e) => { e.stopPropagation(); nav.go('contracts', { contractFor: p.id }); }}>договор не создан</button>}</td>
             <td><span className={'badge ' + (p.problems ? 'bad' : 'ok')}>{p.filled}/{p.total}{p.problems ? ` · ошибок ${p.problems}` : ''}</span></td>
           </tr>))}</tbody>
       </table>

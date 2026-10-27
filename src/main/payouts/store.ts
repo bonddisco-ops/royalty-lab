@@ -1,5 +1,7 @@
 // Хранение итогов выплат и выданных комплектов (payout_period, payout_statement) поверх расчёта.
-import { insertRow, updateRow } from '../db/mutate.ts';
+import { existsSync, rmSync } from 'node:fs';
+import { resolve, sep } from 'node:path';
+import { deleteRow, insertRow, updateRow } from '../db/mutate.ts';
 import type { Ctx, Db } from '../db/types.ts';
 import { computeQuarter, type GroupCalc, type QuarterCalc } from './calc.ts';
 
@@ -85,4 +87,25 @@ export function markPaid(db: Db, ctx: Ctx, quarter: string, groupKey: string, st
     const id = ensurePeriod(db, ctx, quarter, g);
     updateRow(db, ctx, 'payout_period', id, { status, paid_kop: status === 'paid' ? paidKop : null, paid_date: status === 'paid' ? paidDate : null });
   })();
+}
+
+/**
+ * Удалить последний выданный комплект получателя за квартал (пробный, ошибочный): запись скрывается, файлы Excel и PDF стираются.
+ * Более ранняя версия, если была, снова становится текущей. Можно сразу выпускать новый комплект.
+ */
+export function deleteLatestStatement(db: Db, ctx: Ctx, outputDir: string, quarter: string, groupKey: string): { versionNo: number; files: number } {
+  const [payeeId = '', contractId = ''] = groupKey.split('|');
+  const period = db.prepare("SELECT id FROM payout_period WHERE counterparty_id = ? AND ifnull(contract_id, '') = ? AND quarter = ? AND deleted_at IS NULL").get(payeeId, contractId, quarter);
+  if (!period) throw new Error('Комплект не найден');
+  const st = db.prepare('SELECT * FROM payout_statement WHERE payout_period_id = ? AND deleted_at IS NULL ORDER BY version_no DESC').get(period.id);
+  if (!st) throw new Error('У этого получателя нет выданного комплекта');
+  let files = 0;
+  const root = resolve(outputDir);
+  for (const rel of [st.xlsx_file, st.pdf_file]) {
+    if (!rel) continue;
+    const abs = resolve(root, String(rel));
+    if (abs.startsWith(root + sep) && existsSync(abs)) { rmSync(abs, { force: true }); files++; }
+  }
+  deleteRow(db, ctx, 'payout_statement', st.id);
+  return { versionNo: Number(st.version_no), files };
 }

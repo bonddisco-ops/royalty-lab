@@ -3,11 +3,12 @@ import type { HandleFn } from './ipcReports.ts';
 import { contractHtmlToPdf } from './payouts/pdfRender.ts';
 import { FIELDS } from './contracts/fields.ts';
 import { headerLogoBase64 } from './contracts/engine.ts';
-import { deleteAppendix, deleteContract, draftAppendix, exportContractFile, getContract, listContracts, newContract, previewContract, saveAppendix, saveContract, trackRow } from './contracts/service.ts';
+import { deleteAppendix, deleteContract, draftAppendix, exportContractFile, getContract, listContracts, listPeopleWithoutContract, newContract, previewContract, saveAppendix, saveContract, trackRow } from './contracts/service.ts';
 import { requireSession } from './session.ts';
 
 export function registerContractsIpc(handle: HandleFn): void {
   handle('contracts:list', () => listContracts(requireSession().db));
+  handle('contracts:missing', () => listPeopleWithoutContract(requireSession().db));
   handle('contracts:fields', () => FIELDS);
   handle('contracts:new', ({ counterpartyId }) => newContract(requireSession().db, counterpartyId));
   handle('contracts:get', ({ id }) => getContract(requireSession().db, id));

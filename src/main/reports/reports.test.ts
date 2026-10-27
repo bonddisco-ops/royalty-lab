@@ -242,3 +242,39 @@ test('удаление отчёта: мягко, вопросы закрыты, 
   commitImport(db, ctx, input);
   assert.equal(listReports(db).length, 1);
 });
+
+test('трек без ISRC в каталоге узнаётся по названию и артисту, ISRC запоминается', () => {
+  const db = freshDb('r1');
+  const a = insertRow(db, ctx, 'artist', { name: 'Artist A' });
+  const t = insertRow(db, ctx, 'track', { title: 'Song A' });
+  insertRow(db, ctx, 'participation', { track_id: t, artist_id: a, share_authors: '1', share_related: '1', label_rate: '0.5' });
+  const t2 = insertRow(db, ctx, 'track', { title: 'Song B', isrc: 'RUAAA2600777' });
+  const wb = spDigital('related', [spRelRow('RUAAA2600001', 'Song A', 'Artist A', 'VK', 1, 1, 0.7), spRelRow('RUAAA2600002', 'Song B', 'Artist A', 'VK', 1, 1, 0.7)], [2, 1.4]);
+  const res = commitImport(db, ctx, input(db, wb, 'b'.repeat(64)));
+  assert.equal(res.lines, 2);
+  assert.equal(db.prepare('SELECT track_id FROM statement_line WHERE isrc_raw = ?').get('RUAAA2600001')!.track_id, t);
+  assert.equal(db.prepare('SELECT isrc FROM track WHERE id = ?').get(t)!.isrc, 'RUAAA2600001', 'ISRC запомнен');
+  // у «Song B» в каталоге другой ISRC: по названию не гадаем
+  assert.equal(db.prepare('SELECT track_id FROM statement_line WHERE isrc_raw = ?').get('RUAAA2600002')!.track_id, null);
+  void t2;
+});
+
+import { createMissingTracks } from './resolve.ts';
+
+test('недостающие треки создаются сами: артист найден, ставка из договора, остальное подсвечено', () => {
+  const { db, a } = seed();
+  const p = insertRow(db, ctx, 'counterparty', { last_name: 'Иванов', first_name: 'Иван', status: 'ip' });
+  db.prepare('UPDATE artist SET counterparty_id = ? WHERE id = ?').run(p, a);
+  insertRow(db, ctx, 'contract', { counterparty_id: p, number: 'X-1', rate_default: '0.5' });
+  const wb = spDigital('related', [spRelRow('RUAAA2600009', 'New Song', 'Artist A', 'VK', 1, 1, 0.7), spRelRow('RUAAA2600010', 'Ghost', 'Nobody', 'VK', 1, 1, 0.7)], [2, 1.4]);
+  commitImport(db, ctx, input(db, wb, 'c'.repeat(64)));
+  const r = createMissingTracks(db, ctx);
+  assert.deepEqual([r.created, r.withArtist, r.withRate], [2, 1, 1]);
+  const tr = db.prepare("SELECT id FROM track WHERE title = 'New Song'").get()!;
+  const part = db.prepare('SELECT label_rate, share_authors, contract_id FROM participation WHERE track_id = ?').get(tr.id)!;
+  assert.deepEqual([part.label_rate, part.share_authors], ['0.5', '0']);
+  assert.ok(part.contract_id);
+  assert.equal(db.prepare("SELECT count(*) n FROM issue WHERE kind = 'new_track'").get()!.n, 2);
+  assert.equal(db.prepare("SELECT count(*) n FROM issue WHERE kind = 'unmatched_track' AND status = 'open'").get()!.n, 0);
+  assert.equal(db.prepare('SELECT count(*) n FROM statement_line WHERE track_id IS NULL').get()!.n, 0);
+});

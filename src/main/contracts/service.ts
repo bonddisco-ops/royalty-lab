@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEC_ONE, formatDec, parseDec } from '../domain/dec.ts';
 import { insertRow, updateRow, deleteRow } from '../db/mutate.ts';
+import { closeNoContractIssue } from '../repo.ts';
 import type { Ctx, Db, Row } from '../db/types.ts';
 import { safeName } from '../payouts/generate.ts';
 import { renderBlocks, type Block } from './blocks.ts';
@@ -70,6 +71,15 @@ export function listContracts(db: Db): ContractListItem[] {
     id: r.id, counterpartyId: r.counterparty_id, person: personName(r), kind: r.cp_status ?? null, number: r.number, date: r.date ?? null,
     thresholdRub: r.threshold_rub === null || r.threshold_rub === undefined ? null : Number(r.threshold_rub) / 100, appendices: Number(r.app_count), hasTerms: !!r.terms_json,
   }));
+}
+
+export interface MissingContractItem { id: string; person: string; status: string }
+/** Люди без договора: показываются в «Договорах» красными строками. */
+export function listPeopleWithoutContract(db: Db): MissingContractItem[] {
+  return db.prepare(
+    `SELECT c.* FROM counterparty c WHERE c.deleted_at IS NULL AND c.status != 'fl'
+       AND NOT EXISTS (SELECT 1 FROM contract k WHERE k.counterparty_id = c.id AND k.deleted_at IS NULL) ORDER BY c.last_name, c.first_name`,
+  ).all().map((r) => ({ id: r.id, person: personName(r), status: r.status }));
 }
 
 function readTerms(r: Row): Terms {
@@ -141,7 +151,9 @@ export function saveContract(db: Db, ctx: Ctx, e: ContractEdit): string {
   };
   return db.transaction(() => {
     if (e.id) { updateRow(db, ctx, 'contract', e.id, row); return e.id; }
-    return insertRow(db, ctx, 'contract', row);
+    const nid = insertRow(db, ctx, 'contract', row);
+    closeNoContractIssue(db, ctx, String(row.counterparty_id));
+    return nid;
   })();
 }
 

@@ -9,11 +9,11 @@ import { insertRow, updateRow } from './db/mutate.ts';
 import { uuidv7 } from './domain/ids.ts';
 import { generateStatement } from './payouts/generate.ts';
 import { htmlToPdf } from './payouts/pdfRender.ts';
-import { markPaid, payoutsView } from './payouts/store.ts';
+import { deleteLatestStatement, markPaid, payoutsView } from './payouts/store.ts';
 import { applyBulk, listBatches, planBulk, revertBatch } from './reports/bulk.ts';
 import { editLine, revertLine, splitLine } from './reports/edits.ts';
 import { lineFacets, lineHistory, queryLines } from './reports/lines.ts';
-import { aliasUnknownArtist, createArtistFromUnknown, createTrackFromUnmatched, linkUnmatchedToTrack } from './reports/resolve.ts';
+import { aliasUnknownArtist, createArtistFromUnknown, createMissingTracks, createTrackFromUnmatched, linkUnmatchedToTrack } from './reports/resolve.ts';
 import { CUSTOM_FIELDS, FIELD_TITLES, fingerprintOf, matchSavedFormat, parseCustom, proposeMapping, type CustomMapping, type Fingerprint } from './reports/custom.ts';
 import { detectBuiltin } from './reports/detect.ts';
 import { commitImport, previewImport, sha256Hex } from './reports/importer.ts';
@@ -132,6 +132,7 @@ export function registerReportsIpc(handle: HandleFn, getWindow: () => BrowserWin
           const d = s.db.prepare('SELECT id FROM distributor WHERE format_code = ?').get(code);
           if (d) updateRow(s.db, s.ctx, 'import_format', fid, { distributor_id: d.id });
         }
+        if (p.flow === 'artists') { try { createMissingTracks(s.db, s.ctx, s.db.prepare("SELECT id FROM issue WHERE kind = 'unmatched_track' AND status = 'open' AND report_version_id = ? AND deleted_at IS NULL").all(r.versionId).map((x) => String(x.id))); } catch (e) { console.error('Автосоздание треков:', e); } }
         pending.delete(p.id);
         out.push({ id: p.id, fileName: p.fileName, ok: true, lines: r.lines, rowsKop: r.rowsKop, issues: r.issues, versionNo: r.versionNo, carried: r.carried, lost: r.lost });
       } catch (e) {
@@ -207,6 +208,11 @@ export function registerReportsIpc(handle: HandleFn, getWindow: () => BrowserWin
     }
     return out;
   });
+  handle('payouts:deleteStatement', ({ quarter, groupKey }) => {
+    const s = requireSession();
+    backupDb(s.db, s.open.file, s.paths.backups, 'before-delete-statement');
+    return deleteLatestStatement(s.db, s.ctx, s.paths.output, quarter, groupKey);
+  });
   handle('payouts:open', async ({ path }) => {
     const s = requireSession();
     const root = resolve(s.paths.output);
@@ -259,6 +265,11 @@ export function registerReportsIpc(handle: HandleFn, getWindow: () => BrowserWin
   handle('issues:createTrack', ({ issueId }) => {
     const s = requireSession();
     return { trackId: createTrackFromUnmatched(s.db, s.ctx, issueId).trackId };
+  });
+  handle('issues:createMissing', ({ issueIds }) => {
+    const s = requireSession();
+    backupDb(s.db, s.open.file, s.paths.backups, 'before-create-tracks');
+    return createMissingTracks(s.db, s.ctx, issueIds);
   });
   handle('issues:createArtist', ({ issueId, name }) => {
     const s = requireSession();

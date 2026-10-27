@@ -13,7 +13,7 @@ import { queryLines } from '../reports/lines.ts';
 import { parseKnown } from '../reports/parse.ts';
 import { computeQuarter } from './calc.ts';
 import { generateStatement, safeName } from './generate.ts';
-import { payoutsView } from './store.ts';
+import { deleteLatestStatement, payoutsView } from './store.ts';
 import { readXlsxBuffer } from '../reports/xlsx.ts';
 
 const ctx = { userId: 'owner', replicaId: 'r1' };
@@ -82,6 +82,30 @@ test('комплект: без договора или с неверными д�
     await assert.rejects(generateStatement(db, ctx, dir, '2026Q2', key, { city: '', date: '2026-09-21', round: 'down' }, render), /город/);
     await assert.rejects(generateStatement(db, ctx, dir, '2026Q2', key, { city: 'X', date: '21.09.2026', round: 'down' }, render), /Дата/);
     await assert.rejects(generateStatement(db, ctx, dir, '2026Q2', 'нет', { city: 'X', date: '2026-09-21', round: 'down' }, render), /не найден/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('комплект можно удалить: файлы стёрты, прежняя версия снова текущая, новый выпускается', async () => {
+  const db = setup();
+  const dir = mkdtempSync(join(tmpdir(), 'rl-del-'));
+  try {
+    const render = async () => Buffer.from('%PDF-fake');
+    const key = computeQuarter(db, '2026Q2').groups[0]!.key;
+    const opts = { city: 'Москва', date: '2026-10-01', round: 'down' as const };
+    const g1 = await generateStatement(db, ctx, dir, '2026Q2', key, opts, render);
+    const g2 = await generateStatement(db, ctx, dir, '2026Q2', key, opts, render);
+    const r = deleteLatestStatement(db, ctx, dir, '2026Q2', key);
+    assert.deepEqual([r.versionNo, r.files], [2, 2]);
+    assert.equal(existsSync(join(dir, g2.pdf)), false);
+    assert.equal(existsSync(join(dir, g1.pdf)), true);
+    assert.equal(payoutsView(db, '2026Q2').rows[0]!.statement?.versionNo, 1);
+    deleteLatestStatement(db, ctx, dir, '2026Q2', key);
+    assert.equal(payoutsView(db, '2026Q2').rows[0]!.statement, null);
+    assert.throws(() => deleteLatestStatement(db, ctx, dir, '2026Q2', key), /нет выданного комплекта/);
+    const g3 = await generateStatement(db, ctx, dir, '2026Q2', key, opts, render);
+    assert.equal(g3.versionNo, 3, 'номер версии не повторяется');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

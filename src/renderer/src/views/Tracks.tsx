@@ -3,6 +3,9 @@ import type { ArtistListItem, TrackView } from '../../../shared/api.ts';
 import { call } from '../api.ts';
 import { Avatar } from '../Avatar.tsx';
 import { PhotoEditor } from '../PhotoEditor.tsx';
+import { useNav } from '../nav.tsx';
+import { SearchSelect } from '../SearchSelect.tsx';
+import { useSort } from '../sort.tsx';
 import { pctInput, shareToPct } from '../util.ts';
 
 function Participant({ p, trackId, bad, reload }: { p: TrackView['participants'][number]; trackId: string; bad: boolean; reload: () => void }) {
@@ -30,8 +33,8 @@ function Participant({ p, trackId, bad, reload }: { p: TrackView['participants']
   );
 }
 
-function TrackRow({ t, artists, reload }: { t: TrackView; artists: ArtistListItem[]; reload: () => void }) {
-  const [open, setOpen] = useState(false);
+function TrackRow({ t, artists, reload, startOpen }: { t: TrackView; artists: ArtistListItem[]; reload: () => void; startOpen?: boolean }) {
+  const [open, setOpen] = useState(!!startOpen);
   const [add, setAdd] = useState('');
   const [err, setErr] = useState('');
   const [cover, setCover] = useState(false);
@@ -55,10 +58,7 @@ function TrackRow({ t, artists, reload }: { t: TrackView; artists: ArtistListIte
           <div className="part dim" style={{ fontSize: 12 }}><div>Участник</div><div>Автор., %</div><div>Смеж., %</div><div>Ставка, %</div><div /><div /></div>
           {t.participants.map((p) => <Participant key={p.id + p.shareAuthors + p.shareRelated + p.labelRate} p={p} trackId={t.id} bad={t.shareSumBad} reload={reload} />)}
           <div className="row" style={{ marginTop: 8 }}>
-            <select value={add} onChange={(e) => setAdd(e.target.value)} style={{ maxWidth: 300 }}>
-              <option value="">+ добавить участника…</option>
-              {artists.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
+            <SearchSelect width={320} options={artists.filter((a) => !t.participants.some((p) => p.artist === a.name)).map((a) => ({ value: a.id, label: a.name, hint: a.person ?? undefined }))} value={add} onChange={setAdd} placeholder="+ добавить участника (печатайте имя)…" />
             {add && <button onClick={addPart}>Добавить</button>}
           </div>
           {err && <div className="err">{err}</div>}
@@ -69,7 +69,10 @@ function TrackRow({ t, artists, reload }: { t: TrackView; artists: ArtistListIte
 }
 
 export function Tracks({ onChanged }: { onChanged: () => void }) {
-  const [q, setQ] = useState('');
+  const nav = useNav();
+  const [q, setQ] = useState(nav.params.query ?? '');
+  const [focusId] = useState(nav.params.trackId);
+  useEffect(() => { if (nav.params.query || nav.params.trackId) nav.clear(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [onlyProblems, setOnlyProblems] = useState(false);
   const [rows, setRows] = useState<TrackView[]>([]);
   const [artists, setArtists] = useState<ArtistListItem[]>([]);
@@ -82,6 +85,7 @@ export function Tracks({ onChanged }: { onChanged: () => void }) {
   useEffect(() => { const h = setTimeout(load, 150); return () => clearTimeout(h); }, [load]);
   useEffect(() => { void call('artists:list', {}).then(setArtists); }, []);
   const reload = () => { load(); onChanged(); };
+  const { sorted, th } = useSort(rows, { title: (t) => t.title, isrc: (t) => t.isrc ?? t.codes[0], artists: (t) => t.participants.map((p) => p.artist).join(', '), shares: (t) => Number(t.sumAuthors) + Number(t.sumRelated), bad: (t) => (t.shareSumBad || t.hasDuplicates ? 0 : 1) });
 
   async function create() {
     setErr('');
@@ -105,8 +109,8 @@ export function Tracks({ onChanged }: { onChanged: () => void }) {
         </div>
       )}
       <table>
-        <thead><tr><th>Название</th><th>ISRC / коды</th><th>Артисты</th><th>Сумма долей (авт. / смеж.)</th><th /></tr></thead>
-        <tbody>{rows.map((t) => <TrackRow key={t.id} t={t} artists={artists} reload={reload} />)}</tbody>
+        <thead><tr>{th('title', 'Название')}{th('isrc', 'ISRC / коды')}{th('artists', 'Артисты')}{th('shares', 'Сумма долей (авт. / смеж.)')}{th('bad', 'Проблемы')}</tr></thead>
+        <tbody>{sorted.map((t) => <TrackRow key={t.id} t={t} artists={artists} reload={reload} startOpen={t.id === focusId} />)}</tbody>
       </table>
     </>
   );

@@ -4,6 +4,7 @@ import type { Ctx, Db, Row } from '../db/types.ts';
 import { normKey } from '../domain/normalize.ts';
 import { addArtistVariant, createArtist, createTrack } from '../repo.ts';
 import { isIsrcLike } from './util.ts';
+import { artistTokens } from './importer.ts';
 
 function openIssue(db: Db, id: string, kind: string): Row {
   const r = db.prepare('SELECT * FROM issue WHERE id = ? AND deleted_at IS NULL').get(id);
@@ -103,4 +104,54 @@ export function dismissReportIssue(db: Db, ctx: Ctx, issueId: string, status: 'r
   const r = db.prepare('SELECT 1 FROM issue WHERE id = ? AND deleted_at IS NULL').get(issueId);
   if (!r) throw new Error('Вопрос не найден');
   closeIssue(db, ctx, issueId, status, { note: note ?? null });
+}
+
+export interface MissingResult { created: number; withArtist: number; withRate: number; skipped: number; lines: number }
+
+/**
+ * Все треки из отчётов (кроме Effective) — наши и должны быть в каталоге. Заводим недостающие:
+ * артист находится по имени/написаниям, ставка лейбла берётся из его договора (если договор один),
+ * всё остальное (доли, несколько артистов, нет договора) подсвечивается вопросом «new_track».
+ */
+export function createMissingTracks(db: Db, ctx: Ctx, issueIds?: string[]): MissingResult {
+  const res: MissingResult = { created: 0, withArtist: 0, withRate: 0, skipped: 0, lines: 0 };
+  db.transaction(() => {
+    const artistBy = new Map<string, string>();
+    for (const a of db.prepare('SELECT id, name FROM artist WHERE deleted_at IS NULL').all()) artistBy.set(normKey(a.name), a.id);
+    for (const v of db.prepare('SELECT artist_id, variant_norm FROM artist_name_variant WHERE deleted_at IS NULL').all()) artistBy.set(String(v.variant_norm), v.artist_id);
+    const open = db.prepare("SELECT * FROM issue WHERE kind = 'unmatched_track' AND status = 'open' AND deleted_at IS NULL").all()
+      .filter((i) => !issueIds || issueIds.includes(i.id));
+    for (const iss of open) {
+      const cur = db.prepare('SELECT status FROM issue WHERE id = ?').get(iss.id);
+      if (cur?.status !== 'open') continue; // закрыт вместе с одинаковым вопросом из другого отчёта
+      const d = details(iss);
+      const ver = iss.report_version_id ? db.prepare('SELECT header_json FROM report_version WHERE id = ?').get(iss.report_version_id) : null;
+      let fmt = '';
+      try { fmt = String((JSON.parse(String(ver?.header_json ?? '{}')) as Record<string, unknown>).formatCode ?? ''); } catch { /* нет заголовка */ }
+      if (fmt === 'effective' || !String(d.title ?? '').trim()) { res.skipped++; continue; }
+      const made = createTrackFromUnmatched(db, ctx, iss.id);
+      res.created++;
+      res.lines += made.lines;
+      const ids = [...new Set(artistTokens(d.artist ?? null).map((t) => artistBy.get(t)).filter((x): x is string => !!x))];
+      const notes: string[] = ['доли авторских и смежных прав не заданы (стоят 0%)'];
+      if (ids.length === 0) notes.push('артист из отчёта не найден в базе: добавьте участника вручную');
+      if (ids.length > 1) notes.push('несколько артистов: разделите доли');
+      for (const aid of ids) {
+        const art = db.prepare('SELECT counterparty_id FROM artist WHERE id = ?').get(aid);
+        let rate: string | null = null;
+        let contractId: string | null = null;
+        if (art?.counterparty_id) {
+          const cs = db.prepare('SELECT id, rate_default FROM contract WHERE counterparty_id = ? AND deleted_at IS NULL').all(art.counterparty_id);
+          if (cs.length === 1) { contractId = cs[0]!.id; rate = cs[0]!.rate_default ?? null; }
+          else notes.push(cs.length === 0 ? 'у артиста нет договора' : 'у артиста несколько договоров: ставку выберите вручную');
+        } else notes.push('артист не привязан к человеку');
+        if (contractId && !rate) notes.push('в договоре не указана ставка лейбла');
+        insertRow(db, ctx, 'participation', { track_id: made.trackId, artist_id: aid, share_authors: '0', share_related: '0', label_rate: rate, contract_id: contractId });
+        res.withArtist++;
+        if (rate) res.withRate++;
+      }
+      insertRow(db, ctx, 'issue', { kind: 'new_track', entity_type: 'track', entity_id: made.trackId, report_version_id: iss.report_version_id ?? null, details_json: { title: d.title, artist: d.artist ?? null, notes }, status: 'open' });
+    }
+  })();
+  return res;
 }

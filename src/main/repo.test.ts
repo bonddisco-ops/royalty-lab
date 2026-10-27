@@ -96,3 +96,19 @@ test('сводка и настройки', () => {
   assert.throws(() => repo.setSetting(db, ctx, 'hidden_deduction', '1.2'), /от 0 до 1/);
   assert.throws(() => repo.setSetting(db, ctx, 'nope', '1'), /Неизвестная/);
 });
+
+import { addArtistToPerson, closeNoContractIssue, createArtist, createPerson } from './repo.ts';
+
+test('новый человек: вопрос «нет договора»; артист нельзя забрать у другого человека', () => {
+  const db = freshDb('r1');
+  const c = { userId: 'owner', replicaId: 'r1' };
+  const p1 = createPerson(db, c, { last_name: 'Иванов', first_name: 'Иван' });
+  const p2 = createPerson(db, c, { last_name: 'Петров', first_name: 'Пётр' });
+  assert.equal(db.prepare("SELECT count(*) n FROM issue WHERE kind = 'no_contract' AND status = 'open'").get()!.n, 2);
+  const a = createArtist(db, c, { name: 'Alosa' });
+  addArtistToPerson(db, c, p1, { artistId: a });
+  assert.throws(() => addArtistToPerson(db, c, p2, { artistId: a }), /уже закреплён за другим человеком: Иванов/);
+  assert.notEqual(addArtistToPerson(db, c, p2, { name: 'New One' }), a);
+  closeNoContractIssue(db, c, p1);
+  assert.equal(db.prepare("SELECT count(*) n FROM issue WHERE kind = 'no_contract' AND status = 'open'").get()!.n, 1);
+});

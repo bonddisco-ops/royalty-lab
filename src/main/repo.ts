@@ -90,7 +90,40 @@ export function createPerson(db: Db, ctx: Ctx, data: Row): string {
   const row: Row = { status: 'unknown' };
   for (const k of PERSON_EDITABLE) if (k in data) row[k] = emptyToNull(data[k]);
   if (!row.last_name) throw new Error('Нужна хотя бы фамилия');
-  return insertRow(db, ctx, 'counterparty', row);
+  const id = insertRow(db, ctx, 'counterparty', row);
+  ensureNoContractIssue(db, ctx, id);
+  return id;
+}
+
+/** Человек без договора подсвечивается в «Проверить» и в «Договорах». Когда договор появится, вопрос закроется сам (см. closeNoContractIssue). */
+export function ensureNoContractIssue(db: Db, ctx: Ctx, personId: string): void {
+  const has = db.prepare('SELECT 1 FROM contract WHERE counterparty_id = ? AND deleted_at IS NULL').get(personId);
+  const open = db.prepare("SELECT 1 FROM issue WHERE kind = 'no_contract' AND entity_type = 'counterparty' AND entity_id = ? AND status = 'open' AND deleted_at IS NULL").get(personId);
+  if (!has && !open) insertRow(db, ctx, 'issue', { kind: 'no_contract', entity_type: 'counterparty', entity_id: personId, details_json: { note: 'У человека нет договора' }, status: 'open' });
+}
+
+export function closeNoContractIssue(db: Db, ctx: Ctx, personId: string): void {
+  for (const i of db.prepare("SELECT id FROM issue WHERE kind = 'no_contract' AND entity_type = 'counterparty' AND entity_id = ? AND status = 'open' AND deleted_at IS NULL").all(personId)) {
+    updateRow(db, ctx, 'issue', i.id, { status: 'resolved', resolved_by: ctx.userId, resolved_at: new Date().toISOString(), resolution_json: { auto: 'договор создан' } });
+  }
+}
+
+/** «+ артист» в карточке человека: привязать существующего (ошибка, если он уже за другим человеком) или завести нового. */
+export function addArtistToPerson(db: Db, ctx: Ctx, personId: string, d: { artistId?: string; name?: string }): string {
+  return db.transaction(() => {
+    if (d.artistId) {
+      const a = db.prepare('SELECT a.id, a.name, a.counterparty_id, c.last_name, c.first_name, c.middle_name FROM artist a LEFT JOIN counterparty c ON c.id = a.counterparty_id WHERE a.id = ? AND a.deleted_at IS NULL').get(d.artistId);
+      if (!a) throw new Error('Артист не найден');
+      if (a.counterparty_id && a.counterparty_id !== personId) throw new Error(`Артист «${a.name}» уже закреплён за другим человеком: ${personDisplay(a)}. Сначала открепите его там.`);
+      updateArtist(db, ctx, a.id, { counterparty_id: personId });
+      return a.id;
+    }
+    const name = cleanText(d.name ?? '');
+    if (!name) throw new Error('Выберите артиста или введите новое имя');
+    const same = db.prepare('SELECT a.id, a.name, a.counterparty_id FROM artist a JOIN artist_name_variant v ON v.artist_id = a.id AND v.deleted_at IS NULL WHERE a.deleted_at IS NULL AND v.variant_norm = ?').get(normKey(name));
+    if (same) return addArtistToPerson(db, ctx, personId, { artistId: same.id });
+    return createArtist(db, ctx, { name, counterparty_id: personId });
+  })();
 }
 
 export function updatePerson(db: Db, ctx: Ctx, id: string, patch: Row): void {
@@ -361,13 +394,14 @@ export interface IssueView {
   entityId: string | null;
   label: string;
   details: Row;
+  reportVersionId: string | null;
 }
 
-export function listIssues(db: Db, status: 'open' | 'resolved' | 'ignored' = 'open', kind?: string): IssueView[] {
-  const rows = db.prepare(`SELECT * FROM issue WHERE deleted_at IS NULL AND status = ? ${kind ? 'AND kind = ?' : ''} ORDER BY kind, created_at`).all(...(kind ? [status, kind] : [status]));
+export function listIssues(db: Db, status: 'open' | 'resolved' | 'ignored' = 'open', kind?: string, reportVersionId?: string): IssueView[] {
+  const rows = db.prepare(`SELECT * FROM issue WHERE deleted_at IS NULL AND status = ? ${kind ? 'AND kind = ?' : ''} ${reportVersionId ? 'AND report_version_id = ?' : ''} ORDER BY kind, created_at`).all(...[status, ...(kind ? [kind] : []), ...(reportVersionId ? [reportVersionId] : [])]);
   return rows.map((r) => {
     const details = r.details_json ? (JSON.parse(r.details_json) as Row) : {};
-    return { id: r.id, kind: r.kind, status: r.status, entityType: r.entity_type, entityId: r.entity_id, label: issueLabel(db, r, details), details };
+    return { id: r.id, kind: r.kind, status: r.status, entityType: r.entity_type, entityId: r.entity_id, label: issueLabel(db, r, details), details, reportVersionId: r.report_version_id ?? null };
   });
 }
 
