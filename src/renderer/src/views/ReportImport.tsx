@@ -38,7 +38,7 @@ export function ReportImport({ initial, onClose }: { initial: ImportItem[]; onCl
       {results && (
         <div style={{ margin: '10px 0' }}>
           {results.map((r) => r.ok
-            ? <div key={r.id} className="okmsg">✓ {r.fileName}: {fmtInt(r.lines ?? 0)} строк, {fmtKop(r.rowsKop)}, версия {r.versionNo}{r.issues ? `, в «Проверить»: ${r.issues}` : ''}</div>
+            ? <div key={r.id} className="okmsg">✓ {r.fileName}: {fmtInt(r.lines ?? 0)} строк, {fmtKop(r.rowsKop)}, версия {r.versionNo}{r.carried ? `, перенесено правок: ${r.carried}` : ''}{r.issues ? `, в «Проверить»: ${r.issues}` : ''}</div>
             : <div key={r.id} className="err">✗ {r.fileName}: {r.error}</div>)}
         </div>
       )}
@@ -94,6 +94,24 @@ function ItemCard({ it, setOpt, drop, openWizard }: { it: ImportItem; setOpt: (i
           )}
           {p.duplicateOf && <div className="err">Этот файл уже загружен: {p.duplicateOf.distributor}, {p.duplicateOf.quarter}, версия {p.duplicateOf.versionNo}. Он будет пропущен.</div>}
           {p.replaces && <div className="badge bad" style={{ marginTop: 6 }}>Заменит версию {p.replaces.versionNo} ({fmtInt(p.replaces.aggRows)} строк, {fmtKop(p.replaces.rowsKop)}) — старая уйдёт в архив</div>}
+          {p.diff && (
+            <div style={{ margin: '6px 0 0 0', padding: 8, border: '1px solid var(--line)', borderRadius: 8 }}>
+              <b>Что изменится по сравнению с версией {p.replaces?.versionNo}:</b>
+              <div>Появилось строк: {fmtInt(p.diff.added)} · пропало: {fmtInt(p.diff.removed)} · изменилось: {fmtInt(p.diff.changed)} · без изменений: {fmtInt(p.diff.unchanged)}</div>
+              <div>Разница по сумме: <b>{p.diff.deltaKop > 0 ? '+' : ''}{fmtKop(p.diff.deltaKop)}</b></div>
+              {(p.diff.carriedLines > 0 || p.diff.lostLines > 0) && (
+                <div>Ручные правки: перенесутся на {fmtInt(p.diff.carriedLines)} строк{p.diff.lostLines > 0 && <span className="err" style={{ display: 'inline' }}> · не найдут пару и уйдут в «Проверить»: {fmtInt(p.diff.lostLines)}</span>}</div>
+              )}
+              {p.diff.sample.length > 0 && (
+                <table style={{ marginTop: 6 }}>
+                  <thead><tr><th>Трек</th><th>Площадка</th><th>Месяц</th><th style={{ textAlign: 'right' }}>Тираж</th><th style={{ textAlign: 'right' }}>Роялти</th></tr></thead>
+                  <tbody>{p.diff.sample.map((x, i) => (
+                    <tr key={i}><td>{x.title}</td><td>{x.platform}</td><td className="dim">{x.month}</td>
+                      <td style={{ textAlign: 'right' }}>{fmtInt(x.beforeQty)} → {fmtInt(x.afterQty)}</td><td style={{ textAlign: 'right' }}>{fmtKop(x.beforeKop)} → {fmtKop(x.afterKop)}</td></tr>))}</tbody>
+                </table>
+              )}
+            </div>
+          )}
           {p.warnings.map((w, i) => <div key={i} className="dim">⚠ {w}</div>)}
         </>
       )}

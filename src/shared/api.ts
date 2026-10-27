@@ -7,11 +7,12 @@ import type { ImportPreview } from '../main/reports/importer.ts';
 import type { CustomField, CustomMapping } from '../main/reports/custom.ts';
 import type { QuarterPanel, ReportListItem } from '../main/reports/queries.ts';
 import type { Flow, StreamKind } from '../main/reports/types.ts';
+import type { VersionItem } from '../main/reports/replace.ts';
 import type { BatchItem, BulkAction, BulkPlan } from '../main/reports/bulk.ts';
 import type { UiField } from '../main/reports/edits.ts';
 import type { Facets, LineFilter, LinePage, LineRow, LineSort } from '../main/reports/lines.ts';
 
-export type { BatchItem, BulkAction, BulkPlan, UiField, Facets, LineFilter, LinePage, LineRow, LineSort, StreamKind };
+export type { VersionItem, BatchItem, BulkAction, BulkPlan, UiField, Facets, LineFilter, LinePage, LineRow, LineSort, StreamKind };
 export type { ImportPreview, CustomField, CustomMapping, QuarterPanel, ReportListItem, Flow };
 export type { Role, ArtistListItem, Dashboard, IssueView, PersonDetail, PersonListItem, TrackView, PlanSummary, Row };
 
@@ -72,6 +73,8 @@ export interface ApplyResult {
   rowsKop?: number;
   issues?: number;
   versionNo?: number;
+  carried?: number;
+  lost?: number;
 }
 export interface TrackHit {
   id: string;
@@ -93,6 +96,7 @@ export interface ChannelMap {
   'reports:list': [{ quarter?: string }, ReportListItem[]];
   'reports:panel': [{ quarter?: string }, QuarterPanel];
   'reports:setFlow': [{ reportId: string; flow: Flow }, void];
+  'reports:versions': [{ reportId: string }, VersionItem[]];
   'reports:delete': [{ reportId: string }, { versions: number; closedIssues: number }];
   'wizard:info': [{ id: string; sheet?: string; headerRow?: number }, WizardInfo];
   'wizard:apply': [{ id: string; mapping: CustomMapping }, ImportItem];

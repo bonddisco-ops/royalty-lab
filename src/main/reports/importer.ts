@@ -1,4 +1,5 @@
 // Импорт распознанного отчёта в БД (ТЗ §5, Схема_БД §6, §9): агрегация по row_key, привязка треков, очередь «Проверить».
+import { carryEdits, diffVersions, type ReplaceDiff } from './replace.ts';
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
@@ -264,6 +265,8 @@ export interface ImportPreview {
   footerLabel: string | null;
   duplicateOf: { quarter: string; distributor: string; versionNo: number } | null;
   replaces: { versionNo: number; aggRows: number; rowsKop: number } | null;
+  /** Сравнение с заменяемой версией (только если replaces). */
+  diff: ReplaceDiff | null;
   match: { matchedLines: number; unmatchedLines: number; unmatchedTracks: number; unmatchedKop: number; unknownArtists: number; notReportedKop: number; isrcTwoDistributors: number };
   byStreamKind: Record<string, { rows: number; kop: number }>;
   warnings: string[];
@@ -283,7 +286,7 @@ export function previewImport(db: Db, inp: ImportInput): ImportPreview {
   ).get(inp.fileSha);
   const prev = dist
     ? db.prepare(
-        `SELECT v.version_no, v.total_rows_kop, (SELECT count(*) FROM statement_line l WHERE l.report_version_id = v.id) AS n
+        `SELECT v.id AS version_id, v.version_no, v.total_rows_kop, (SELECT count(*) FROM statement_line l WHERE l.report_version_id = v.id) AS n
            FROM report r JOIN report_version v ON v.id = r.current_version_id
           WHERE r.distributor_id = ? AND r.quarter = ? AND r.rights_scope = ? AND r.deleted_at IS NULL`,
       ).get(dist.id, inp.quarter, parsed.rightsScope)
@@ -313,6 +316,7 @@ export function previewImport(db: Db, inp: ImportInput): ImportPreview {
     footerLabel: parsed.totals?.label ?? null,
     duplicateOf: dup ? { quarter: dup.quarter, distributor: dup.name, versionNo: dup.version_no } : null,
     replaces: prev ? { versionNo: prev.version_no, aggRows: prev.n, rowsKop: prev.total_rows_kop } : null,
+    diff: prev ? diffVersions(db, prev.version_id, a.agg.map((l) => ({ rowKey: l.rowKey, qty: l.qty, royaltyKop: l.royaltyKop }))) : null,
     match: {
       matchedLines: a.matchedLines,
       unmatchedLines: a.unmatchedLines,
@@ -336,6 +340,9 @@ export interface CommitResult {
   lines: number;
   rowsKop: number;
   issues: number;
+  /** Строк с ручными правками, перенесённых из прежней версии / не нашедших пару. */
+  carried: number;
+  lost: number;
 }
 
 export interface CommitOptions {
@@ -378,6 +385,7 @@ export function commitImport(db: Db, ctx: Ctx, inp: ImportInput, opts: CommitOpt
       const existing = db.prepare('SELECT * FROM report WHERE distributor_id = ? AND quarter = ? AND rights_scope = ? AND deleted_at IS NULL').get(distributorId, inp.quarter, parsed.rightsScope);
       let reportId: string;
       let versionNo = 1;
+      const prevVersionId: string | null = existing?.current_version_id ?? null;
       if (existing) {
         reportId = existing.id;
         versionNo = Number(db.prepare('SELECT max(version_no) AS m FROM report_version WHERE report_id = ?').get(reportId)?.m ?? 0) + 1;
@@ -414,7 +422,8 @@ export function commitImport(db: Db, ctx: Ctx, inp: ImportInput, opts: CommitOpt
       for (const iss of a.issues) {
         insertRow(db, ctx, 'issue', { kind: iss.kind, entity_type: 'report_version', entity_id: versionId, report_version_id: versionId, details_json: iss.details, status: 'open' });
       }
-      return { reportId, versionId, versionNo, lines: a.agg.length, rowsKop: a.rowsKop, issues: a.issues.length };
+      const carry = prevVersionId ? carryEdits(db, ctx, prevVersionId, versionId) : { carried: 0, lost: 0 };
+      return { reportId, versionId, versionNo, lines: a.agg.length, rowsKop: a.rowsKop, issues: a.issues.length + carry.lost, carried: carry.carried, lost: carry.lost };
     })();
   } catch (e) {
     if (storedAbs && opts.file && existsSync(storedAbs)) {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ImportItem, QuarterPanel, ReportListItem } from '../../../shared/api.ts';
+import type { ImportItem, QuarterPanel, ReportListItem, VersionItem } from '../../../shared/api.ts';
 import { call } from '../api.ts';
 import { FLOW_LABELS, SCOPE_LABELS, fmtInt, fmtKop, quarterLabel } from '../util.ts';
 import { ReportImport } from './ReportImport.tsx';
@@ -11,6 +11,7 @@ export function Reports({ onChanged }: { onChanged: () => void }) {
   const [importing, setImporting] = useState<ImportItem[] | null>(null);
   const [err, setErr] = useState('');
   const [del, setDel] = useState<ReportListItem | null>(null);
+  const [vers, setVers] = useState<{ item: ReportListItem; list: VersionItem[] } | null>(null);
 
   const load = useCallback(() => {
     void call('reports:panel', { quarter }).then((p) => {
@@ -71,7 +72,7 @@ export function Reports({ onChanged }: { onChanged: () => void }) {
             <tbody>{list.map((r) => (
               <tr key={r.reportId}>
                 <td>{r.distributor}</td><td>{SCOPE_LABELS[r.scope] ?? r.scope}</td>
-                <td>{r.versionNo}{r.versions > 1 && <span className="dim"> из {r.versions}</span>}</td>
+                <td>{r.versionNo}{r.versions > 1 && <button className="link" title="Показать все версии" onClick={() => call('reports:versions', { reportId: r.reportId }).then((list) => setVers({ item: r, list })).catch((e: Error) => setErr(e.message))}>из {r.versions}</button>}</td>
                 <td>{fmtInt(r.rows)}</td><td>{fmtKop(r.rowsKop)}</td>
                 <td>{r.footerKop === null ? <span className="dim">нет</span> : r.footerOk ? <span className="badge ok">✓</span> : <span className="badge bad">{fmtKop(r.footerKop)}</span>}</td>
                 <td><select value={r.flow} onChange={(e) => setFlow(r.reportId, e.target.value as 'artists' | 'personal' | 'ignore')}>{Object.entries(FLOW_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></td>
@@ -80,6 +81,20 @@ export function Reports({ onChanged }: { onChanged: () => void }) {
               </tr>))}</tbody>
           </table>
         </>
+      )}
+      {vers && (
+        <div className="modal"><div className="dialog" style={{ maxWidth: 720 }}>
+          <h2>Версии отчёта: {vers.item.distributor}, {quarterLabel(vers.item.quarter)}</h2>
+          <table>
+            <thead><tr><th>Версия</th><th>Загружена</th><th>Файл</th><th style={{ textAlign: 'right' }}>Строк</th><th style={{ textAlign: 'right' }}>Сумма</th><th /></tr></thead>
+            <tbody>{vers.list.map((v) => (
+              <tr key={v.id}><td>{v.versionNo}</td><td>{new Date(v.importedAt).toLocaleString('ru-RU')}</td><td className="dim">{v.fileName}</td>
+                <td style={{ textAlign: 'right' }}>{fmtInt(v.rows)}</td><td style={{ textAlign: 'right' }}>{fmtKop(v.rowsKop)}</td>
+                <td>{v.current ? <span className="badge ok">текущая</span> : <span className="badge">в архиве</span>}</td></tr>))}</tbody>
+          </table>
+          <p className="dim">Старые версии хранятся в архиве. Чтобы заменить отчёт, просто загрузите новый файл за тот же квартал — программа покажет, что изменилось.</p>
+          <div className="row end"><button onClick={() => setVers(null)}>Закрыть</button></div>
+        </div></div>
       )}
       {del && (
         <div className="modal"><div className="dialog" style={{ maxWidth: 520 }}>

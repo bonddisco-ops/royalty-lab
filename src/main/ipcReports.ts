@@ -14,6 +14,7 @@ import { CUSTOM_FIELDS, FIELD_TITLES, fingerprintOf, matchSavedFormat, parseCust
 import { detectBuiltin } from './reports/detect.ts';
 import { commitImport, previewImport, sha256Hex } from './reports/importer.ts';
 import { parseBuiltin } from './reports/parse.ts';
+import { listVersions } from './reports/replace.ts';
 import { deleteReport, listReports, quarterPanel, setReportFlow } from './reports/queries.ts';
 import type { Flow, ParsedReport, WorkbookData } from './reports/types.ts';
 import { readXlsxBuffer } from './reports/xlsx.ts';
@@ -128,7 +129,7 @@ export function registerReportsIpc(handle: HandleFn, getWindow: () => BrowserWin
           if (d) updateRow(s.db, s.ctx, 'import_format', fid, { distributor_id: d.id });
         }
         pending.delete(p.id);
-        out.push({ id: p.id, fileName: p.fileName, ok: true, lines: r.lines, rowsKop: r.rowsKop, issues: r.issues, versionNo: r.versionNo });
+        out.push({ id: p.id, fileName: p.fileName, ok: true, lines: r.lines, rowsKop: r.rowsKop, issues: r.issues, versionNo: r.versionNo, carried: r.carried, lost: r.lost });
       } catch (e) {
         out.push({ id: p.id, fileName: p.fileName, ok: false, error: (e as Error).message });
       }
@@ -143,6 +144,7 @@ export function registerReportsIpc(handle: HandleFn, getWindow: () => BrowserWin
     setReportFlow(s.db, s.ctx, reportId, flow);
   });
 
+  handle('reports:versions', ({ reportId }) => listVersions(requireSession().db, reportId));
   handle('reports:delete', ({ reportId }) => {
     const s = requireSession();
     backupDb(s.db, s.open.file, s.paths.backups, 'before-report-delete');

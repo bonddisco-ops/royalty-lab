@@ -14,6 +14,8 @@ function details(i: IssueView): string {
     case 'unknown_artist': return `строк ${d.lines} · ${money('royalty_kop')}`;
     case 'not_reported_platform': return `строк ${d.lines} · ${money('royalty_kop')} — площадка не указана дистрибьютором`;
     case 'footer_mismatch': return `в файле ${money('footer_kop')}, по строкам ${money('rows_kop')}, разница ${money('diff_kop')}`;
+    case 'edit_lost_on_replace':
+      return `${d.title ?? ''} · ${d.platform ?? ''} · ${d.month ?? ''} ${d.country ?? ''} — в новой версии отчёта такой строки нет. Правки: ${[...(Array.isArray(d.edits) ? d.edits : []), ...(Array.isArray(d.splits) ? d.splits : [])].join(', ')}`;
     case 'isrc_two_distributors': return `ISRC ${d.isrc}; также у: ${Array.isArray(d.other_distributors) ? d.other_distributors.join(', ') : ''}`;
     default: return Object.entries(d).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`).join('; ');
   }
