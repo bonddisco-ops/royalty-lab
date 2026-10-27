@@ -11,7 +11,7 @@ import { CUSTOM_FIELDS, FIELD_TITLES, fingerprintOf, matchSavedFormat, parseCust
 import { detectBuiltin } from './reports/detect.ts';
 import { commitImport, previewImport, sha256Hex } from './reports/importer.ts';
 import { parseBuiltin } from './reports/parse.ts';
-import { listReports, quarterPanel, setReportFlow } from './reports/queries.ts';
+import { deleteReport, listReports, quarterPanel, setReportFlow } from './reports/queries.ts';
 import type { Flow, ParsedReport, WorkbookData } from './reports/types.ts';
 import { readXlsxBuffer } from './reports/xlsx.ts';
 import * as repo from './repo.ts';
@@ -138,6 +138,12 @@ export function registerReportsIpc(handle: HandleFn, getWindow: () => BrowserWin
   handle('reports:setFlow', ({ reportId, flow }) => {
     const s = requireSession();
     setReportFlow(s.db, s.ctx, reportId, flow);
+  });
+
+  handle('reports:delete', ({ reportId }) => {
+    const s = requireSession();
+    backupDb(s.db, s.open.file, s.paths.backups, 'before-report-delete');
+    return deleteReport(s.db, s.ctx, reportId);
   });
 
   // ------------------------------------------------ мастер незнакомого формата

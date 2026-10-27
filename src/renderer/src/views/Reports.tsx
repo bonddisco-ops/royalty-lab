@@ -10,6 +10,7 @@ export function Reports({ onChanged }: { onChanged: () => void }) {
   const [list, setList] = useState<ReportListItem[]>([]);
   const [importing, setImporting] = useState<ImportItem[] | null>(null);
   const [err, setErr] = useState('');
+  const [del, setDel] = useState<ReportListItem | null>(null);
 
   const load = useCallback(() => {
     void call('reports:panel', { quarter }).then((p) => {
@@ -25,6 +26,11 @@ export function Reports({ onChanged }: { onChanged: () => void }) {
   };
   const setFlow = async (reportId: string, flow: 'artists' | 'personal' | 'ignore') => {
     try { await call('reports:setFlow', { reportId, flow }); load(); onChanged(); } catch (e) { setErr((e as Error).message); }
+  };
+
+  const remove = async () => {
+    if (!del) return;
+    try { await call('reports:delete', { reportId: del.reportId }); setDel(null); load(); onChanged(); } catch (e) { setErr((e as Error).message); setDel(null); }
   };
 
   return (
@@ -61,7 +67,7 @@ export function Reports({ onChanged }: { onChanged: () => void }) {
           </div>
           <h3>Загруженные отчёты</h3>
           <table>
-            <thead><tr><th>Дистрибьютор</th><th>Права</th><th>Версия</th><th>Строк</th><th>Сумма</th><th>Итог в файле</th><th>Куда</th><th>Файл</th></tr></thead>
+            <thead><tr><th>Дистрибьютор</th><th>Права</th><th>Версия</th><th>Строк</th><th>Сумма</th><th>Итог в файле</th><th>Куда</th><th>Файл</th><th /></tr></thead>
             <tbody>{list.map((r) => (
               <tr key={r.reportId}>
                 <td>{r.distributor}</td><td>{SCOPE_LABELS[r.scope] ?? r.scope}</td>
@@ -70,9 +76,18 @@ export function Reports({ onChanged }: { onChanged: () => void }) {
                 <td>{r.footerKop === null ? <span className="dim">нет</span> : r.footerOk ? <span className="badge ok">✓</span> : <span className="badge bad">{fmtKop(r.footerKop)}</span>}</td>
                 <td><select value={r.flow} onChange={(e) => setFlow(r.reportId, e.target.value as 'artists' | 'personal' | 'ignore')}>{Object.entries(FLOW_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></td>
                 <td className="dim">{r.fileName}{r.openIssues > 0 && <span className="badge bad">{r.openIssues}</span>}</td>
+                <td><button className="link" onClick={() => setDel(r)}>удалить</button></td>
               </tr>))}</tbody>
           </table>
         </>
+      )}
+      {del && (
+        <div className="modal"><div className="dialog" style={{ maxWidth: 520 }}>
+          <h2>Удалить отчёт?</h2>
+          <p>{del.distributor} · {SCOPE_LABELS[del.scope] ?? del.scope} · {quarterLabel(del.quarter)}<br />{fmtInt(del.rows)} строк на {fmtKop(del.rowsKop)}{del.versions > 1 ? `, версий: ${del.versions} (удалятся все)` : ''}</p>
+          <p className="dim">Перед удалением программа сделает бэкап. Вопросы из «Проверить» по этому отчёту закроются. Потом этот же файл можно загрузить заново.</p>
+          <div className="row end"><button onClick={() => setDel(null)}>Отмена</button><button className="primary" onClick={remove}>Удалить</button></div>
+        </div></div>
       )}
       {importing && <ReportImport initial={importing} onClose={(changed) => { setImporting(null); if (changed) { load(); onChanged(); } }} />}
     </>

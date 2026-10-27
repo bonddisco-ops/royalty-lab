@@ -7,7 +7,7 @@ import { detectBuiltin } from './detect.ts';
 import { aggregate, commitImport, previewImport, sha256Hex } from './importer.ts';
 import { parseKnown } from './parse.ts';
 import { aliasUnknownArtist, createTrackFromUnmatched, linkUnmatchedToTrack } from './resolve.ts';
-import { listReports, quarterPanel } from './queries.ts';
+import { deleteReport, listReports, quarterPanel } from './queries.ts';
 import { FormatError } from './types.ts';
 import { toKop } from './util.ts';
 
@@ -225,4 +225,20 @@ test('чтение .xlsx: общие строки, форматированны�
   assert.deepEqual(rows[0], ['Артист', null, 'inline']);
   assert.deepEqual(rows[1], []);
   assert.deepEqual(rows[2], ['Song A', 12.5, '2026-07-01', '2026-07-01 12:00:00', true, null, ' a & b ']);
+});
+
+test('удаление отчёта: мягко, вопросы закрыты, файл и квартал можно загрузить заново', () => {
+  const db = freshDb();
+  const wb = spDigital('related', [spRelRow('RUAAA2600001', 'Song A', 'Artist A', 'Yandex Music', 6, 1, 0.7)], [1, 0.7]);
+  const input = { parsed: parseKnown(wb), fileName: 'a.xlsx', fileSha: sha256Hex(Buffer.from('x')), flow: 'artists' as const, quarter: '2026Q2' };
+  const r = commitImport(db, ctx, input);
+  assert.equal(listReports(db).length, 1);
+  assert.ok(Number(db.prepare("SELECT count(*) AS n FROM issue WHERE status = 'open' AND report_version_id = ?").get(r.versionId)?.n) > 0);
+  const res = deleteReport(db, ctx, r.reportId);
+  assert.equal(res.versions, 1);
+  assert.equal(listReports(db).length, 0);
+  assert.equal(Number(db.prepare("SELECT count(*) AS n FROM issue WHERE status = 'open' AND deleted_at IS NULL AND report_version_id = ?").get(r.versionId)?.n), 0);
+  assert.throws(() => deleteReport(db, ctx, r.reportId), /не найден/);
+  commitImport(db, ctx, input);
+  assert.equal(listReports(db).length, 1);
 });

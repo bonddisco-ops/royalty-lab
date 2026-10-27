@@ -1,4 +1,4 @@
-import { updateRow } from '../db/mutate.ts';
+import { deleteRow, updateRow } from '../db/mutate.ts';
 import type { Ctx, Db } from '../db/types.ts';
 import type { Flow } from './types.ts';
 
@@ -75,4 +75,28 @@ export function quarterPanel(db: Db, quarter?: string): QuarterPanel {
 export function setReportFlow(db: Db, ctx: Ctx, reportId: string, flow: Flow): void {
   if (!['artists', 'personal', 'ignore'].includes(flow)) throw new Error('Неизвестный маршрут отчёта');
   updateRow(db, ctx, 'report', reportId, { flow });
+}
+
+/**
+ * Удаление отчёта целиком (все версии). Мягкое: запись остаётся в истории, файл-оригинал остаётся на диске,
+ * открытые вопросы по нему закрываются. После удаления тот же файл и тот же квартал можно загрузить заново.
+ */
+export function deleteReport(db: Db, ctx: Ctx, reportId: string): { versions: number; closedIssues: number } {
+  return db.transaction(() => {
+    const rep = db.prepare('SELECT id FROM report WHERE id = ? AND deleted_at IS NULL').get(reportId);
+    if (!rep) throw new Error('Отчёт не найден (возможно, уже удалён)');
+    const versions = db.prepare('SELECT id FROM report_version WHERE report_id = ? AND deleted_at IS NULL').all(reportId);
+    const now = new Date().toISOString();
+    let closed = 0;
+    for (const v of versions) {
+      const open = db.prepare("SELECT id FROM issue WHERE report_version_id = ? AND status = 'open' AND deleted_at IS NULL").all(v.id);
+      for (const i of open) {
+        updateRow(db, ctx, 'issue', i.id, { status: 'ignored', resolved_at: now, resolved_by: ctx.userId, resolution_json: { auto: 'report_deleted' } });
+        closed++;
+      }
+      deleteRow(db, ctx, 'report_version', v.id);
+    }
+    deleteRow(db, ctx, 'report', reportId);
+    return { versions: versions.length, closedIssues: closed };
+  })();
 }

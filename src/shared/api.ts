@@ -89,6 +89,7 @@ export interface ChannelMap {
   'reports:list': [{ quarter?: string }, ReportListItem[]];
   'reports:panel': [{ quarter?: string }, QuarterPanel];
   'reports:setFlow': [{ reportId: string; flow: Flow }, void];
+  'reports:delete': [{ reportId: string }, { versions: number; closedIssues: number }];
   'wizard:info': [{ id: string; sheet?: string; headerRow?: number }, WizardInfo];
   'wizard:apply': [{ id: string; mapping: CustomMapping }, ImportItem];
   'tracks:search': [{ q: string }, TrackHit[]];
