@@ -35,6 +35,8 @@ export interface LineRow {
   origUsage: string | null;
   changed: string[];
   hasSplit: boolean;
+  /** Сколько действующих переносов у исходной строки. */
+  splitCount: number;
 }
 
 export interface LineFilter {
@@ -124,7 +126,7 @@ function loadVersionFull(db: Db, versionId: string): VersionCache {
         country: l.country, month: l.period_month, qty: p.qty, royaltyKop: p.royaltyKop, rate: p.rate, streamKind: p.streamKind, trackId: p.trackId,
         trackTitle: p.trackId ? titles.get(p.trackId) ?? null : null,
         origQty: moved ? 0 : l.qty, origRoyaltyKop: moved ? 0 : l.royalty_kop, origRate: moved ? null : origRate, origStreamKind: l.stream_kind, origUsage: l.usage_type,
-        changed: p.changed, hasSplit: sp.length > 0,
+        changed: p.changed, hasSplit: sp.length > 0, splitCount: sp.length,
       });
     }
   }

@@ -102,7 +102,7 @@ export interface ChannelMap {
   'wizard:apply': [{ id: string; mapping: CustomMapping }, ImportItem];
   'lines:query': [{ filter: LineFilter; sort?: LineSort; offset?: number; limit?: number }, LinePage];
   'lines:facets': [{ quarter?: string }, Facets];
-  'lines:edit': [{ lineId: string; field: UiField; value: string | null }, void];
+  'lines:edit': [{ lineId: string; field: UiField; value: string | null; splitId?: string | null }, void];
   'lines:split': [{ lineId: string; qtyMoved: number; toKind: StreamKind; rate?: string | null }, void];
   'lines:revert': [{ lineId: string }, number];
   'bulk:plan': [{ filter: LineFilter; action: BulkAction }, Omit<BulkPlan, 'items'>];

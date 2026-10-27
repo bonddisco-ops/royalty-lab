@@ -2,8 +2,8 @@
 import { insertRow, updateRow } from '../db/mutate.ts';
 import { getSetting } from '../db/init.ts';
 import type { Ctx, Db } from '../db/types.ts';
-import { parseRateRub } from './effective.ts';
-import { findLine, invalidateLines } from './lines.ts';
+import { effectivePieces, parseRateRub, rateToRubString } from './effective.ts';
+import { findLine, invalidateLines, lineSrc } from './lines.ts';
 import type { StreamKind } from './types.ts';
 
 export type UiField = 'qty' | 'royalty' | 'rate' | 'stream_kind' | 'usage_type' | 'track_id';
@@ -65,15 +65,73 @@ export function planEdit(db: Db, lineId: string, field: UiField, value: string |
   }
 }
 
-export function editLine(db: Db, ctx: Ctx, lineId: string, field: UiField, value: string | null): void {
+export function editLine(db: Db, ctx: Ctx, lineId: string, field: UiField, value: string | null, splitId: string | null = null): void {
   db.transaction(() => {
     const { versionId } = assertEditable(db, lineId);
-    if (hasActiveSplit(db, lineId)) throw new Error('У строки есть перенос прослушиваний. Сначала верните строку к исходной');
-    for (const e of planEdit(db, lineId, field, value)) {
-      insertRow(db, ctx, 'line_edit', { line_id: lineId, field: e.field, new_value: e.value, batch_id: null });
+    if (hasActiveSplit(db, lineId)) editSplitLine(db, ctx, lineId, splitId, field, value);
+    else {
+      if (splitId) throw new Error('Перенос не найден');
+      for (const e of planEdit(db, lineId, field, value)) {
+        insertRow(db, ctx, 'line_edit', { line_id: lineId, field: e.field, new_value: e.value, batch_id: null });
+      }
     }
     invalidateLines(db, versionId);
   })();
+}
+
+/**
+ * Правка строки с переносом. Перенесённую часть править можно (тираж, роялти, ставка, тип, вид): уменьшенный тираж возвращается
+ * в основную строку и считается по её ставке. В основной строке можно менять только тираж, и только если перенос один:
+ * разница уходит в перенесённую часть.
+ */
+function editSplitLine(db: Db, ctx: Ctx, lineId: string, splitId: string | null, field: UiField, value: string | null): void {
+  const src = lineSrc(db, lineId)?.src;
+  if (!src) throw new Error('Строка не найдена');
+  const total = effectivePieces(src.base, src.edits, [])[0]!.qty; // тираж строки без учёта переносов
+  const splits = src.splits;
+  const v = value === null ? '' : String(value).trim();
+  const setQty = (sp: { id: string }, q: number, others: number) => {
+    if (q > total - others) throw new Error(`Всего в строке ${total} прослушиваний, под перенос осталось не больше ${total - others}`);
+    if (q === 0) updateRow(db, ctx, 'line_split', sp.id, { reverted_at: new Date().toISOString() });
+    else updateRow(db, ctx, 'line_split', sp.id, { qty_moved: q });
+  };
+  const intOf = (): number => {
+    const t = v.replace(/[\s ]/g, '');
+    if (!/^\d+$/.test(t)) throw new Error('Тираж — целое число не меньше 0');
+    return Number(t);
+  };
+  if (splitId === null) {
+    if (field !== 'qty') throw new Error('В основной строке с переносом можно менять только тираж. Остальное правьте в перенесённой части или верните строку кнопкой ↩');
+    if (splits.length !== 1) throw new Error('У строки несколько переносов: меняйте тираж в перенесённых частях');
+    const x = intOf();
+    if (x > total) throw new Error(`Всего в строке ${total} прослушиваний`);
+    setQty(splits[0]!, total - x, 0);
+    return;
+  }
+  const sp = splits.find((s) => s.id === splitId);
+  if (!sp) throw new Error('Перенос не найден');
+  const piece = src.pieces.find((p) => p.splitId === splitId);
+  const others = splits.filter((s) => s.id !== splitId).reduce((a, s) => a + s.qtyMoved, 0);
+  switch (field) {
+    case 'qty': setQty(sp, intOf(), others); return;
+    case 'rate':
+      if (v && !parseRateRub(v)) throw new Error('Ставка — число в рублях за прослушивание, например 0,0123');
+      updateRow(db, ctx, 'line_split', sp.id, { rate_per_stream: v ? v.replace(',', '.') : null });
+      return;
+    case 'royalty': {
+      const kop = rubToKop(v);
+      const q = piece?.qty ?? sp.qtyMoved;
+      if (q <= 0) throw new Error('В перенесённой части нет прослушиваний');
+      updateRow(db, ctx, 'line_split', sp.id, { rate_per_stream: rateToRubString({ n: BigInt(kop), d: BigInt(q) }, 12) });
+      return;
+    }
+    case 'stream_kind':
+      if (!KINDS.includes(v as StreamKind)) throw new Error('Неизвестный тип стрима');
+      updateRow(db, ctx, 'line_split', sp.id, { to_stream_kind: v });
+      return;
+    case 'usage_type': updateRow(db, ctx, 'line_split', sp.id, { to_usage_type: v || null }); return;
+    case 'track_id': throw new Error('Трек меняется у всей строки: верните строку кнопкой ↩ и смените трек');
+  }
 }
 
 export function splitLine(db: Db, ctx: Ctx, lineId: string, qtyMoved: number, toKind: StreamKind, rateRub?: string | null, toUsage?: string | null): void {

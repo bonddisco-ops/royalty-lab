@@ -154,9 +154,9 @@ export function registerReportsIpc(handle: HandleFn, getWindow: () => BrowserWin
   // ------------------------------------------------ таблица строк и правки (этап 3)
   handle('lines:query', ({ filter, sort, offset, limit }) => queryLines(requireSession().db, filter, sort, offset ?? 0, Math.min(limit ?? 200, 500)));
   handle('lines:facets', ({ quarter }) => lineFacets(requireSession().db, quarter));
-  handle('lines:edit', ({ lineId, field, value }) => {
+  handle('lines:edit', ({ lineId, field, value, splitId }) => {
     const s = requireSession();
-    editLine(s.db, s.ctx, lineId, field, value);
+    editLine(s.db, s.ctx, lineId, field, value, splitId ?? null);
   });
   handle('lines:split', ({ lineId, qtyMoved, toKind, rate }) => {
     const s = requireSession();

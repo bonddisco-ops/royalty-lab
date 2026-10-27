@@ -102,7 +102,7 @@ export function Lines({ onChanged }: { onChanged: () => void }) {
   const setFilter = (patch: Partial<LineFilter>) => { setF((x) => ({ ...x, ...patch })); setOffset(0); };
   const after = () => { load(); onChanged(); };
   const run = async (fn: () => Promise<unknown>) => { setErr(''); try { await fn(); after(); } catch (e) { setErr((e as Error).message); } };
-  const edit = (r: LineRow, field: UiField, value: string) => run(() => call('lines:edit', { lineId: r.lineId, field, value }));
+  const edit = (r: LineRow, field: UiField, value: string) => run(() => call('lines:edit', { lineId: r.lineId, field, value, splitId: r.splitId }));
   const toggleSort = (k: LineSort['key']) => { setSort((s) => (s.key === k ? { key: k, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key: k, dir: k === 'qty' || k === 'royalty' || k === 'rate' ? 'desc' : 'asc' })); setOffset(0); };
   const active = Object.entries(f).some(([, v]) => (Array.isArray(v) ? v.length > 0 : !!v));
 
@@ -145,7 +145,9 @@ export function Lines({ onChanged }: { onChanged: () => void }) {
           </thead>
           <tbody>{page?.rows.map((r) => {
             const moved = r.splitId !== null;
-            const lock = r.hasSplit; // после переноса править нельзя
+            // у строки с переносом: перенесённая часть правится целиком, основная — только тираж (если перенос один)
+            const qtyOk = !r.hasSplit || moved || r.splitCount === 1;
+            const lock = r.hasSplit && !moved;
             const ch = (k: string) => r.changed.includes(k);
             return (
               <tr key={r.key} style={moved ? { background: '#7fb56b14' } : undefined}>
@@ -154,7 +156,7 @@ export function Lines({ onChanged }: { onChanged: () => void }) {
                 <td className="mono dim">{r.isrc ?? r.code}</td><td>{r.platform}</td>
                 <EditCell text={r.usage ?? ''} initial={r.usage ?? ''} editable={!lock} changed={ch('usage_type')} orig={r.origUsage} onCommit={(v) => edit(r, 'usage_type', v)} />
                 <td className="dim">{r.model}</td><td>{r.country}</td><td className="dim">{r.month}</td>
-                <EditCell numeric text={fmtInt(r.qty)} initial={String(r.qty)} editable={!lock} changed={ch('qty')} orig={fmtInt(r.origQty)} onCommit={(v) => edit(r, 'qty', v)} />
+                <EditCell numeric text={fmtInt(r.qty)} initial={String(r.qty)} editable={qtyOk} changed={ch('qty')} orig={fmtInt(r.origQty)} onCommit={(v) => edit(r, 'qty', v)} />
                 <EditCell numeric text={fmtKop(r.royaltyKop)} initial={kopToInput(r.royaltyKop)} editable={!lock} changed={ch('royalty')} orig={fmtKop(r.origRoyaltyKop)} onCommit={(v) => edit(r, 'royalty', v)} />
                 <EditCell numeric text={r.rate ?? '—'} initial={r.rate ?? ''} editable={!lock && r.qty > 0} changed={ch('rate')} orig={r.origRate} onCommit={(v) => edit(r, 'rate', v)} />
                 <EditCell text={STREAM_SHORT[r.streamKind] ?? r.streamKind} initial={r.streamKind} editable={!lock} changed={ch('stream_kind')} orig={STREAM_SHORT[r.origStreamKind]}

@@ -64,7 +64,7 @@ test('режим keep_royalty: при смене тиража роялти не 
   assert.equal(a.rate, '0.0175');
 });
 
-test('перенос прослушиваний: две строки, сумма та же; править после переноса нельзя', () => {
+test('перенос прослушиваний: две строки, сумма та же; в основной строке с переносом правится только тираж', () => {
   const { db } = setup();
   const row = queryLines(db, { quarter: '2026Q2', q: 'song a' }).rows[0]!;
   splitLine(db, ctx, row.lineId, 400, 'ad');
@@ -72,7 +72,7 @@ test('перенос прослушиваний: две строки, сумма
   assert.equal(rows.length, 2);
   assert.equal(rows.reduce((a, r) => a + r.royaltyKop, 0), 3500);
   assert.deepEqual(rows.map((r) => r.streamKind).sort(), ['ad', 'paid']);
-  assert.throws(() => editLine(db, ctx, row.lineId, 'qty', '5'), /перенос/);
+  assert.throws(() => editLine(db, ctx, row.lineId, 'royalty', '5'), /только тираж/);
   assert.throws(() => splitLine(db, ctx, row.lineId, 9999, 'ad'), /осталось/);
   revertLine(db, ctx, row.lineId);
   assert.equal(queryLines(db, { quarter: '2026Q2', q: 'song a' }).rows.length, 1);
@@ -85,4 +85,30 @@ test('валидация правок', () => {
   assert.throws(() => editLine(db, ctx, row.lineId, 'stream_kind', 'foo'), /тип/);
   assert.throws(() => editLine(db, ctx, row.lineId, 'track_id', 'nope'), /не найден/);
   assert.throws(() => editLine(db, ctx, 'nope', 'qty', '1'), /не найдена/);
+});
+
+test('правка перенесённой части: тираж возвращается в основную строку, ставка части, удаление переноса', () => {
+  const { db } = setup();
+  const line = queryLines(db, { quarter: '2026Q2', q: 'song a' }).rows[0]!.lineId;
+  splitLine(db, ctx, line, 400, 'ad');
+  const get = () => {
+    const rows = queryLines(db, { quarter: '2026Q2', q: 'song a' }).rows;
+    return { main: rows.find((r) => !r.splitId)!, moved: rows.find((r) => r.splitId)! };
+  };
+  editLine(db, ctx, line, 'qty', '300', get().moved.splitId);
+  let { main, moved } = get();
+  assert.deepEqual([main.qty, moved.qty], [700, 300]);
+  assert.equal(main.royaltyKop + moved.royaltyKop, 3500); // ставка не задана — сумма сохраняется
+  editLine(db, ctx, line, 'rate', '0', moved.splitId);
+  ({ main, moved } = get());
+  assert.equal(moved.royaltyKop, 0);
+  assert.equal(main.royaltyKop, 2450); // 700 × 0,035
+  editLine(db, ctx, line, 'qty', '600', null); // основная строка: разница уходит в перенос
+  ({ main, moved } = get());
+  assert.deepEqual([main.qty, moved.qty], [600, 400]);
+  assert.throws(() => editLine(db, ctx, line, 'royalty', '1', null), /только тираж/);
+  assert.throws(() => editLine(db, ctx, line, 'qty', '2000', get().moved.splitId), /не больше/);
+  editLine(db, ctx, line, 'qty', '0', get().moved.splitId);
+  assert.equal(queryLines(db, { quarter: '2026Q2', q: 'song a' }).rows.length, 1);
+  assert.equal(queryLines(db, { quarter: '2026Q2', q: 'song a' }).rows[0]!.royaltyKop, 3500);
 });
