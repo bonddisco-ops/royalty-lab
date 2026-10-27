@@ -1,0 +1,13 @@
+node_modules/
+out/
+release/
+dist/
+*.rldb
+*.rlab
+# Данные заказчика (паспорта, банки) в репозиторий не попадают никогда
+*.xlsx
+*.xls
+*.csv
+*.pdf
+users.json
+.env
