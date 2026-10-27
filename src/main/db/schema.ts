@@ -343,6 +343,11 @@ const M006 = `
 ALTER TABLE statement_line ADD COLUMN royalty_exact TEXT;
 `;
 
+// M007 (этап 5): условия договора, которые правятся в конструкторе (сроки, суммы, галочки пунктов).
+const M007 = `
+ALTER TABLE contract ADD COLUMN terms_json TEXT;
+`;
+
 export const MIGRATIONS: Array<{ version: number; sql: string }> = [
   { version: 1, sql: M001 },
   { version: 2, sql: M002 },
@@ -350,6 +355,7 @@ export const MIGRATIONS: Array<{ version: number; sql: string }> = [
   { version: 4, sql: M004 },
   { version: 5, sql: M005 },
   { version: 6, sql: M006 },
+  { version: 7, sql: M007 },
 ];
 
 export function currentVersion(db: Db): number {

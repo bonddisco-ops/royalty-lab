@@ -12,8 +12,12 @@ import type { PayoutRow, PayoutsView, StatementInfo } from '../main/payouts/stor
 import type { VersionItem } from '../main/reports/replace.ts';
 import type { BatchItem, BulkAction, BulkPlan } from '../main/reports/bulk.ts';
 import type { UiField } from '../main/reports/edits.ts';
+import type { AppendixDraft, AppendixListItem, ContractDetail, ContractEdit, ContractListItem, ContractPreview, DraftTrack, ExportRequest } from '../main/contracts/service.ts';
+import type { Block, PBlock, Seg } from '../main/contracts/blocks.ts';
+import type { FieldDef } from '../main/contracts/fields.ts';
 import type { Facets, LineFilter, LineHistory, LinePage, LineRow, LineSort } from '../main/reports/lines.ts';
 
+export type { AppendixDraft, AppendixListItem, ContractDetail, ContractEdit, ContractListItem, ContractPreview, DraftTrack, ExportRequest, Block, PBlock, Seg, FieldDef };
 export type { GroupCalc, Problem, QuarterCalc, PayoutRow, PayoutsView, StatementInfo };
 export type { LineHistory, VersionItem, BatchItem, BulkAction, BulkPlan, UiField, Facets, LineFilter, LinePage, LineRow, LineSort, StreamKind };
 export type { ImportPreview, CustomField, CustomMapping, QuarterPanel, ReportListItem, Flow };
@@ -127,6 +131,18 @@ export interface ChannelMap {
   'payouts:mark': [{ quarter: string; groupKey: string; status: 'draft' | 'ready' | 'paid'; paidKop?: number | null; paidDate?: string | null }, void];
   'payouts:generate': [{ quarter: string; groupKeys: string[]; city?: string; date?: string; round?: 'down' | 'up' | 'nearest' }, GenerateResult[]];
   'payouts:open': [{ path: string }, void];
+  'contracts:list': [void, ContractListItem[]];
+  'contracts:fields': [void, FieldDef[]];
+  'contracts:new': [{ counterpartyId: string }, ContractDetail];
+  'contracts:get': [{ id: string }, ContractDetail];
+  'contracts:preview': [ContractEdit, ContractPreview];
+  'contracts:save': [ContractEdit, string];
+  'contracts:delete': [{ id: string }, void];
+  'contracts:export': [{ req: ExportRequest; edit: ContractEdit | null; draft: AppendixDraft | null }, { path: string }];
+  'appendix:draft': [{ contractId: string; appendixId?: string | null }, AppendixDraft];
+  'appendix:track': [{ contractId: string; trackId: string; date: string }, DraftTrack];
+  'appendix:save': [{ contractId: string; draft: AppendixDraft }, string];
+  'appendix:delete': [{ id: string }, void];
   'tracks:search': [{ q: string }, TrackHit[]];
   'issues:linkTrack': [{ issueId: string; trackId: string }, { lines: number }];
   'issues:createTrack': [{ issueId: string }, { trackId: string }];

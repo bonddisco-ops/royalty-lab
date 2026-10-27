@@ -11,10 +11,11 @@ import { Issues } from './views/Issues.tsx';
 import { Reports } from './views/Reports.tsx';
 import { Lines } from './views/Lines.tsx';
 import { Payouts } from './views/Payouts.tsx';
+import { Contracts } from './views/Contracts.tsx';
 import { Settings } from './views/Settings.tsx';
 
-type Tab = 'home' | 'tracks' | 'people' | 'artists' | 'reports' | 'lines' | 'payouts' | 'issues' | 'settings';
-const TABS: Array<[Tab, string]> = [['home', 'Главная'], ['tracks', 'Треки'], ['people', 'Люди'], ['artists', 'Артисты'], ['reports', 'Отчёты'], ['lines', 'Строки'], ['payouts', 'Выплаты'], ['issues', 'Проверить'], ['settings', 'Настройки']];
+type Tab = 'home' | 'tracks' | 'people' | 'artists' | 'reports' | 'lines' | 'payouts' | 'contracts' | 'issues' | 'settings';
+const TABS: Array<[Tab, string]> = [['home', 'Главная'], ['tracks', 'Треки'], ['people', 'Люди'], ['artists', 'Артисты'], ['reports', 'Отчёты'], ['lines', 'Строки'], ['payouts', 'Выплаты'], ['contracts', 'Договоры'], ['issues', 'Проверить'], ['settings', 'Настройки']];
 
 export function App() {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
@@ -59,6 +60,7 @@ export function App() {
         {tab === 'reports' && <Reports onChanged={refresh} />}
         {tab === 'lines' && <Lines onChanged={refresh} />}
         {tab === 'payouts' && <Payouts onChanged={refresh} goto={(t) => setTab(t as Tab)} />}
+        {tab === 'contracts' && <Contracts onChanged={refresh} />}
         {tab === 'issues' && <Issues onChanged={refresh} />}
         {tab === 'settings' && <Settings auth={auth} onChanged={refresh} />}
       </main>

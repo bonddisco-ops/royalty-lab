@@ -39,3 +39,22 @@ label.f.bad input { border-color:var(--bad); }
 .crop { position:relative; width:300px; height:300px; background:#000; overflow:hidden; cursor:grab; margin:0 auto; touch-action:none; }
 .crop canvas { width:300px; height:300px; display:block; } .crop.circle::after { content:''; position:absolute; inset:0; border-radius:50%; box-shadow:0 0 0 400px #000a; pointer-events:none; }
 .drop { border:2px dashed var(--line); border-radius:10px; padding:26px; text-align:center; color:var(--dim); } .drop.over { border-color:var(--accent); color:var(--accent); }
+
+/* Договоры */
+.ctr { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
+.ctr-side { position: sticky; top: 0; max-height: calc(100vh - 220px); overflow: auto; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
+.ctr-doc { background: #fff; color: #111; padding: 28px 36px; border-radius: 8px; max-height: calc(100vh - 220px); overflow: auto; font-family: 'Times New Roman', serif; font-size: 14px; line-height: 1.45; }
+.ctr-doc .cp { margin: 0 0 6px; }
+.ctr-doc .a-center { text-align: center; } .ctr-doc .a-right { text-align: right; } .ctr-doc .a-both { text-align: justify; }
+.ctr-doc .h { font-weight: 700; }
+.ctr-doc .off { opacity: .4; text-decoration: line-through; }
+.ctr-doc .opt { display: block; font: 12px sans-serif; color: #555; text-decoration: none; }
+.ctr-doc .sys { background: #eef3ff; border-radius: 3px; }
+.ctr-doc .chip { font: inherit; padding: 0 4px; border: 1px dashed #b07d00; background: #fff6d6; color: #111; border-radius: 3px; cursor: pointer; }
+.ctr-doc .chip-in { width: 90px; font: inherit; }
+.ctr-t { width: 100%; border-collapse: collapse; } .ctr-t td { border: 1px solid #999; padding: 4px; vertical-align: top; }
+.chk { display: flex; gap: 6px; align-items: flex-start; margin: 4px 0; }
+.warn { background: #3a2f10; color: #ffd98a; padding: 8px 12px; border-radius: 6px; margin: 8px 0; }
+.ag { border-collapse: collapse; } .ag td, .ag th { padding: 2px; font-size: 12px; } .ag input { width: 100%; min-width: 60px; box-sizing: border-box; }
+.ag input.empty { outline: 1px solid #b07d00; }
+.pop { position: absolute; top: 100%; left: 0; z-index: 5; background: var(--bg, #222); border: 1px solid var(--line); border-radius: 6px; display: flex; flex-direction: column; padding: 4px; }

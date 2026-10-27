@@ -202,6 +202,11 @@ function fillTable(table: string, rows: string[][], emptyRow: string[]): string 
   return table.slice(0, trs[pi]!.index) + built.join('') + table.slice(trs[pi]!.index! + proto.length);
 }
 
+/** Логотип из колонтитула шаблона (для PDF). */
+export function headerLogoBase64(): string | null {
+  return tpl().get('word/media/image1.png')?.toString('base64') ?? null;
+}
+
 export interface BuildParts { contract: boolean; appendix?: AppendixInput | null }
 
 export function buildDocx(input: ContractInput, parts: BuildParts): Buffer {

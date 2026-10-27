@@ -14,6 +14,7 @@ import { dataPaths, ensureDataDirs, type DataPaths } from './paths.ts';
 import { readPhoto, removePhoto, savePhoto } from './photos.ts';
 import * as repo from './repo.ts';
 import { registerReportsIpc } from './ipcReports.ts';
+import { registerContractsIpc } from './ipcContracts.ts';
 import { buildStarterPlan, type StarterPlan } from './seed/starterPlan.ts';
 import { readStarterWorkbook } from './seed/starterReader.ts';
 import { writeStarterPlan } from './seed/starterWrite.ts';
@@ -253,6 +254,7 @@ export function registerIpc(profileDir: string, getWindow: () => BrowserWindow |
   });
 
   registerReportsIpc(handle, getWindow);
+  registerContractsIpc(handle);
 
   // ---------------------------------------------------- стартовая база (этап 1)
   handle('starter:pick', async (): Promise<StarterPreview | null> => {
