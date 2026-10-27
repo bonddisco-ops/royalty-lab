@@ -124,8 +124,10 @@ export function effectivePieces(base: BaseLine, edits: EditRec[], splits: SplitR
       streamKind: piece.kind, usageType: piece.usage, trackId: piece.track, changed: [...new Set([...changedOf(piece), 'split'])],
     });
     const left = rem.qty - m;
-    const leftRoy = rem.roy - mRoy; // деньги отчёта не меняются: остаток получает разницу
-    rem = { ...rem, qty: left, roy: leftRoy, rate: left > 0 ? { n: BigInt(leftRoy), d: BigInt(left) } : null };
+    // Своя ставка у части: остаток считается по прежней ставке, общая сумма строки меняется (деньги по перерасчёту не придут).
+    // Ставка не задана: часть и остаток по прежней ставке, сумма строки сохраняется до копейки.
+    const leftRoy = sp.ratePerStream && rem.rate ? royFromRate(left, rem.rate) : rem.roy - mRoy;
+    rem = { ...rem, qty: left, roy: leftRoy, rate: sp.ratePerStream ? rem.rate : left > 0 ? { n: BigInt(leftRoy), d: BigInt(left) } : null };
   }
   out.push({
     key: base.id, lineId: base.id, splitId: null, qty: rem.qty, royaltyKop: rem.roy, rate: rateToRubString(rem.rate), rateFrac: rem.rate,

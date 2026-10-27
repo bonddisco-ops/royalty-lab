@@ -202,9 +202,9 @@ function SplitDialog({ row, onClose, onDone }: { row: LineRow; onClose: () => vo
       <div className="grid2" style={{ marginTop: 10 }}>
         <label className="f">Сколько перенести<input autoFocus value={qty} onChange={(e) => setQty(e.target.value)} placeholder={`до ${fmtInt(row.qty)}`} /></label>
         <label className="f">В какой тип<select value={kind} onChange={(e) => setKind(e.target.value as StreamKind)}>{Object.entries(STREAM_SHORT).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
-        <label className="f">Ставка части, ₽ за прослушивание (необязательно)<input value={rate} onChange={(e) => setRate(e.target.value)} placeholder="как у исходной" /></label>
+        <label className="f">Ставка перенесённой части, ₽ за прослушивание<input value={rate} onChange={(e) => setRate(e.target.value)} placeholder="пусто — как у исходной, 0 — бесплатные" /></label>
       </div>
-      <p className="dim">Сумма строки не меняется: перенесённая часть получает деньги по своей ставке, остаток — всё остальное.</p>
+      <p className="dim">Если ставку не указать, сумма строки не меняется. Если указать (в том числе 0), перенесённая часть считается по ней, остаток — по прежней ставке, и общая сумма строки уменьшится: эти деньги дистрибьютор не платил.</p>
       {err && <div className="err">{err}</div>}
       <div className="row end"><button onClick={onClose}>Отмена</button><button className="primary" onClick={go}>Перенести</button></div>
     </div></div>

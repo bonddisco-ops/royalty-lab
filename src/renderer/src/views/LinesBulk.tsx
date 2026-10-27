@@ -76,7 +76,7 @@ export function BulkDialog({ filter, total, onClose }: { filter: LineFilter; tot
           <label className="f">Сколько<select value={mvBy} onChange={(e) => setMvBy(e.target.value as typeof mvBy)}><option value="percent">процент прослушиваний каждой строки</option><option value="qty">штук из каждой строки</option></select></label>
           <label className="f">{mvBy === 'percent' ? 'Процент (1–100)' : 'Штук'}<input autoFocus value={mvValue} onChange={(e) => setMvValue(e.target.value)} /></label>
           <label className="f">В какой тип<select value={mvKind} onChange={(e) => setMvKind(e.target.value as StreamKind)}>{Object.entries(STREAM_SHORT).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
-          <label className="f">Ставка части, ₽ (необязательно)<input value={mvRate} onChange={(e) => setMvRate(e.target.value)} placeholder="как у исходной" /></label>
+          <label className="f">Ставка перенесённой части, ₽<input value={mvRate} onChange={(e) => setMvRate(e.target.value)} placeholder="пусто — как у исходной, 0 — бесплатные" /></label>
         </div>
       )}
       {err && <div className="err">{err}</div>}

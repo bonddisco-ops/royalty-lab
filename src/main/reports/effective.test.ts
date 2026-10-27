@@ -59,10 +59,20 @@ test('перенос части: сумма отчёта сохраняется,
   assert.equal(ps[1]!.royaltyKop, 2000);
 });
 
-test('перенос со своей ставкой: часть по ставке, остаток получает разницу', () => {
+test('перенос со своей ставкой: остаток по прежней ставке, сумма строки уменьшается', () => {
   const sp: SplitRec = { id: 's1', lineId: 'L1', qtyMoved: 400, toStreamKind: 'ad', toUsageType: null, ratePerStream: '0.01' };
   const ps = effectivePieces(base, [], [sp]);
-  assert.equal(ps[1]!.royaltyKop, 400); assert.equal(ps[0]!.royaltyKop, 4600); assert.equal(ps[0]!.royaltyKop + ps[1]!.royaltyKop, 5000);
+  assert.equal(ps[1]!.royaltyKop, 400); // 400 × 0,01 ₽
+  assert.equal(ps[0]!.royaltyKop, 3000); // 600 × 0,05 ₽
+  assert.equal(ps[0]!.rate, '0.05');
+  assert.equal(ps[0]!.royaltyKop + ps[1]!.royaltyKop, 3400);
+});
+
+test('миллион прослушиваний за 30 000 ₽: половину сделали бесплатными', () => {
+  const big: BaseLine = { id: 'L1', qty: 1_000_000, royaltyKop: 3_000_000, streamKind: 'paid', usageType: null, trackId: null };
+  const ps = effectivePieces(big, [], [{ id: 's1', lineId: 'L1', qtyMoved: 500_000, toStreamKind: 'ad', toUsageType: null, ratePerStream: '0' }]);
+  assert.equal(ps[0]!.royaltyKop, 1_500_000);
+  assert.equal(ps[1]!.royaltyKop, 0);
 });
 
 test('перенос больше остатка обрезается, два переноса подряд', () => {
