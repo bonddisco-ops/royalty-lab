@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ArtistListItem, TrackView } from '../../../shared/api.ts';
 import { call } from '../api.ts';
+import { Avatar } from '../Avatar.tsx';
+import { PhotoEditor } from '../PhotoEditor.tsx';
 import { pctInput, shareToPct } from '../util.ts';
 
 function Participant({ p, trackId, bad, reload }: { p: TrackView['participants'][number]; trackId: string; bad: boolean; reload: () => void }) {
@@ -32,6 +34,7 @@ function TrackRow({ t, artists, reload }: { t: TrackView; artists: ArtistListIte
   const [open, setOpen] = useState(false);
   const [add, setAdd] = useState('');
   const [err, setErr] = useState('');
+  const [cover, setCover] = useState(false);
   const addPart = async () => {
     setErr('');
     try { await call('parts:add', { trackId: t.id, artistId: add, shareAuthors: '0', shareRelated: '0', labelRate: null }); setAdd(''); reload(); } catch (e) { setErr((e as Error).message); }
@@ -39,7 +42,7 @@ function TrackRow({ t, artists, reload }: { t: TrackView; artists: ArtistListIte
   return (
     <>
       <tr className="click" onClick={() => setOpen(!open)}>
-        <td>{t.title}</td>
+        <td><div className="nameCell"><Avatar square file={t.cover} />{t.title}</div></td>
         <td className="mono">{t.isrc ?? <span className="dim">{t.codes.join(', ') || '—'}</span>}</td>
         <td>{t.participants.map((p) => p.artist).join(', ')}</td>
         <td className={t.shareSumBad ? 'sum bad' : 'dim'}>{shareToPct(t.sumAuthors)}% / {shareToPct(t.sumRelated)}%</td>
@@ -47,6 +50,8 @@ function TrackRow({ t, artists, reload }: { t: TrackView; artists: ArtistListIte
       </tr>
       {open && (
         <tr><td colSpan={5} style={{ background: 'var(--panel)' }}>
+          <div className="row" style={{ marginBottom: 8 }}><Avatar big square file={t.cover} onClick={() => setCover(true)} title="Обложка: заменить, убрать, сохранить в файл" /><span className="dim">Обложка трека (в Excel и PDF не попадает)</span></div>
+          {cover && <PhotoEditor table="track" id={t.id} file={t.cover} title={t.title} onClose={(ch) => { setCover(false); if (ch) reload(); }} />}
           <div className="part dim" style={{ fontSize: 12 }}><div>Участник</div><div>Автор., %</div><div>Смеж., %</div><div>Ставка, %</div><div /><div /></div>
           {t.participants.map((p) => <Participant key={p.id + p.shareAuthors + p.shareRelated + p.labelRate} p={p} trackId={t.id} bad={t.shareSumBad} reload={reload} />)}
           <div className="row" style={{ marginTop: 8 }}>

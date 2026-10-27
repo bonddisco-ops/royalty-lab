@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { PersonDetail, PersonListItem } from '../../../shared/api.ts';
 import { call, FIELD_GROUPS, FIELD_LABELS } from '../api.ts';
+import { Avatar } from '../Avatar.tsx';
+import { PhotoEditor } from '../PhotoEditor.tsx';
 
 function PersonDialog({ id, onClose }: { id: string | null; onClose: () => void }) {
   const [det, setDet] = useState<PersonDetail | null>(null);
   const [edit, setEdit] = useState<Record<string, string>>({});
   const [reveal, setReveal] = useState(false);
   const [err, setErr] = useState('');
+  const [photoOpen, setPhotoOpen] = useState(false);
 
   const load = useCallback(async (rv: boolean) => {
     if (!id) return;
@@ -30,7 +33,10 @@ function PersonDialog({ id, onClose }: { id: string | null; onClose: () => void 
   const editable = !id || reveal;
   return (
     <div className="modal"><div className="dialog">
-      <h1>{id ? 'Карточка человека' : 'Новый человек'}</h1>
+      <div className="row" style={{ marginBottom: 8 }}>
+        {id && <Avatar big file={det?.fields.photo_file as string | null} onClick={() => setPhotoOpen(true)} title="Фото: заменить, убрать, сохранить в файл" />}
+        <h1 style={{ margin: 0 }}>{id ? 'Карточка человека' : 'Новый человек'}</h1>
+      </div>
       {id && det?.masked && <div className="row" style={{ marginBottom: 8 }}><span className="dim">Паспорт, ИНН, счета скрыты.</span><button onClick={() => { setReveal(true); void load(true); }}>Показать и редактировать</button></div>}
       {det && <div style={{ marginBottom: 8 }}><span className="badge">Заполнено {det.completeness.filled} из {det.completeness.total}</span>{det.checks.map((c, i) => <span key={i} className="badge bad">{c.message}</span>)}</div>}
       {FIELD_GROUPS.map(([g, fields]) => (
@@ -42,6 +48,7 @@ function PersonDialog({ id, onClose }: { id: string | null; onClose: () => void 
       {det && det.artists.length > 0 && (<><h3>Артисты</h3><div>{det.artists.map((a) => <span key={a.id} className="badge">{a.name}</span>)}</div></>)}
       {det && det.contracts.length > 0 && (<><h3>Договоры</h3><ul className="plain">{det.contracts.map((c) => <li key={c.id}>{c.number} <span className="dim">{c.date ?? 'без даты'} · {c.kind}{c.has_pdf ? '' : ' · PDF не приложен'}</span></li>)}</ul></>)}
       {err && <div className="err">{err}</div>}
+      {photoOpen && id && <PhotoEditor table="counterparty" id={id} file={(det?.fields.photo_file as string | null) ?? null} title={det ? [det.fields.last_name, det.fields.first_name].filter(Boolean).join(' ') : ''} onClose={(ch) => { setPhotoOpen(false); if (ch) void load(reveal); }} />}
       <div className="row end"><button onClick={onClose}>Закрыть</button>{editable && <button className="primary" onClick={save}>Сохранить</button>}</div>
     </div></div>
   );
@@ -61,7 +68,7 @@ export function People({ onChanged }: { onChanged: () => void }) {
         <thead><tr><th>ФИО</th><th>Статус</th><th>Артисты</th><th>Договоры</th><th>Данные</th></tr></thead>
         <tbody>{rows.map((p) => (
           <tr key={p.id} className="click" onClick={() => setSel(p.id)}>
-            <td>{p.display}</td><td className="dim">{p.status}</td><td>{p.artists.join(', ')}</td><td className="mono">{p.contracts.join(', ')}</td>
+            <td><div className="nameCell"><Avatar file={p.photo} />{p.display}</div></td><td className="dim">{p.status}</td><td>{p.artists.join(', ')}</td><td className="mono">{p.contracts.join(', ')}</td>
             <td><span className={'badge ' + (p.problems ? 'bad' : 'ok')}>{p.filled}/{p.total}{p.problems ? ` · ошибок ${p.problems}` : ''}</span></td>
           </tr>))}</tbody>
       </table>

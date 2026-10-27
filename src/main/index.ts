@@ -1,11 +1,10 @@
 import { app, BrowserWindow } from 'electron';
 import { join } from 'node:path';
-import { dataPaths, ensureDataDirs } from './paths.ts';
 import { registerIpc } from './ipc.ts';
 import { endSession, setLockListener } from './session.ts';
 
-const root = process.env.ROYALTY_LAB_DATA ?? join(app.getPath('appData'), 'RoyaltyLab');
-const paths = dataPaths(root);
+const profileDir = process.env.ROYALTY_LAB_DATA ?? join(app.getPath('appData'), 'RoyaltyLab');
+let shutdown: () => void = () => {};
 let win: BrowserWindow | null = null;
 
 function createWindow(): void {
@@ -41,17 +40,17 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
   app.whenReady().then(() => {
-    ensureDataDirs(paths);
-    registerIpc(paths, () => win);
+    shutdown = registerIpc(profileDir, () => win, () => app.quit()).shutdown;
     setLockListener(() => win?.webContents.send('locked'));
     createWindow();
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
   });
-  app.on('before-quit', () => endSession());
+  app.on('before-quit', () => { endSession(); shutdown(); });
   app.on('window-all-closed', () => {
     endSession();
+    shutdown();
     app.quit();
   });
 }

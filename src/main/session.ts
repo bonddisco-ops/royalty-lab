@@ -1,3 +1,5 @@
+import { copyFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { backupDb } from './db/backup.ts';
 import { getSetting } from './db/init.ts';
 import type { OpenDb } from './db/open.ts';
@@ -66,6 +68,7 @@ export function endSession(): void {
   session = null;
   try {
     backupDb(s.db, s.open.file, s.paths.backups, 'close');
+    if (existsSync(s.paths.usersFile)) copyFileSync(s.paths.usersFile, join(s.paths.backups, 'users.json.bak')); // ключ нужен для открытия копий
   } catch (e) {
     console.error('Бэкап при закрытии не удался:', e);
   }

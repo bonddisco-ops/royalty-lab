@@ -171,7 +171,18 @@ CREATE INDEX ix_change_log_row ON change_log(table_name, row_id);
 CREATE TABLE sync_state (replica_id TEXT PRIMARY KEY, last_seq_seen INTEGER NOT NULL);
 `;
 
-export const MIGRATIONS: Array<{ version: number; sql: string }> = [{ version: 1, sql: M001 }];
+// M002: фото людей и артистов, обложки треков. В базе только имя файла внутри папки photos/
+// (сам файл зашифрован ключом данных; уменьшенная копия лежит рядом с суффиксом .thumb).
+const M002 = `
+ALTER TABLE counterparty ADD COLUMN photo_file TEXT;
+ALTER TABLE artist ADD COLUMN photo_file TEXT;
+ALTER TABLE track ADD COLUMN cover_file TEXT;
+`;
+
+export const MIGRATIONS: Array<{ version: number; sql: string }> = [
+  { version: 1, sql: M001 },
+  { version: 2, sql: M002 },
+];
 
 export function currentVersion(db: Db): number {
   const r = db.prepare('PRAGMA user_version').get();

@@ -29,6 +29,13 @@ export function Settings({ auth, onChanged }: { auth: AuthStatus; onChanged: () 
       <h2>Резервная копия</h2>
       <button onClick={() => run(async () => { const f = await call('backup:now'); setMsg(`Копия: ${f}`); }, '')}>Сделать копию сейчас</button>
       <span className="dim"> Копия делается и при закрытии программы (хранится 30 последних).</span>
+      <h2>Папки</h2>
+      <div className="dim">Данные: <span className="mono">{auth.data.path}</span></div>
+      <div className="dim">Копии: <span className="mono">{auth.data.backupDir ?? 'внутри папки данных (backups)'}</span></div>
+      <div className="row" style={{ marginTop: 8 }}>
+        <button onClick={() => run(async () => { const p = await call('data:pickBackupDir'); if (p) setMsg(`Копии будут в: ${p.path}${p.warning ? '. ⚠ ' + p.warning : ''}`); }, '')}>Выбрать папку для копий…</button>
+      </div>
+      <div className="dim" style={{ marginTop: 6 }}>Перенос данных в другую папку будет отдельной кнопкой («Переместить данные») — делаю следом.</div>
       <h2>Мой пароль</h2>
       <div className="grid2">
         <label className="f">Старый<input type="password" value={pw.oldPassword} onChange={(e) => setPw({ ...pw, oldPassword: e.target.value })} /></label>

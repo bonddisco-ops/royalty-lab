@@ -1,12 +1,17 @@
 import { dialog, ipcMain, type BrowserWindow } from 'electron';
-import { basename } from 'node:path';
-import type { AuthStatus, ChannelMap, IpcResult, StarterPreview } from '../shared/api.ts';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { basename, join, parse } from 'node:path';
+import type { AuthStatus, ChannelMap, DataState, FolderPick, IpcResult, PhotoTable, StarterPreview } from '../shared/api.ts';
+import { cloudWarning, findExistingRoot, readConfig, rootFromParent, writeConfig } from './config.ts';
 import { addUser, changePassword, initVault, listUsers, readUsers, unlock } from './crypto/keys.ts';
+import { acquireLock, releaseLock } from './dataLock.ts';
 import { backupDb } from './db/backup.ts';
 import { ensureDefaultSettings } from './db/init.ts';
+import { updateRow } from './db/mutate.ts';
 import { openEncryptedDb } from './db/open.ts';
 import { uuidv7 } from './domain/ids.ts';
-import { ensureDataDirs, type DataPaths } from './paths.ts';
+import { dataPaths, ensureDataDirs, type DataPaths } from './paths.ts';
+import { readPhoto, removePhoto, savePhoto } from './photos.ts';
 import * as repo from './repo.ts';
 import { buildStarterPlan, type StarterPlan } from './seed/starterPlan.ts';
 import { readStarterWorkbook } from './seed/starterReader.ts';
@@ -17,8 +22,36 @@ type Handler<K extends keyof ChannelMap> = (req: ChannelMap[K][0]) => Promise<Ch
 
 const pending = new Map<string, { plan: StarterPlan; fileName: string }>();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const PHOTO_COLUMN: Record<PhotoTable, string> = { counterparty: 'photo_file', artist: 'photo_file', track: 'cover_file' };
 
-export function registerIpc(paths: DataPaths, getWindow: () => BrowserWindow | null): void {
+export function registerIpc(profileDir: string, getWindow: () => BrowserWindow | null, quit: () => void): { shutdown: () => void } {
+  const cfgFile = join(profileDir, 'config.json');
+  let paths: DataPaths | null = null;
+  let state: DataState = 'setup';
+  let message: string | undefined;
+
+  /** Определяет, можно ли работать: папка данных выбрана, доступна, не занята. Ничего молча не создаёт заново. */
+  function evaluate(): void {
+    if (paths) releaseLock(paths.lockFile);
+    paths = null;
+    message = undefined;
+    const cfg = readConfig(cfgFile);
+    if (!cfg.dataRoot) { state = 'setup'; return; }
+    const p = dataPaths(cfg.dataRoot, profileDir, cfg.backupDir);
+    const vault = readUsers(p.usersFile) !== null;
+    if (!existsSync(p.root) || (vault && !existsSync(p.dbFile))) { state = 'missing'; return; }
+    try {
+      ensureDataDirs(p);
+      acquireLock(p.lockFile);
+      paths = p;
+      state = 'ok';
+    } catch (e) {
+      state = 'busy';
+      message = (e as Error).message;
+    }
+  }
+  evaluate();
+
   function handle<K extends keyof ChannelMap>(channel: K, fn: Handler<K>, opts: { open?: boolean } = {}): void {
     ipcMain.handle(channel, async (_e, req): Promise<IpcResult<ChannelMap[K][1]>> => {
       try {
@@ -35,32 +68,99 @@ export function registerIpc(paths: DataPaths, getWindow: () => BrowserWindow | n
 
   const status = (): AuthStatus => {
     const s = getSession();
-    return { initialized: readUsers(paths.usersFile) !== null, unlocked: !!s, user: s?.user ?? null, users: listUsers(paths.usersFile) };
+    const cfg = readConfig(cfgFile);
+    return {
+      data: { state, path: paths?.root ?? cfg.dataRoot, defaultRoot: profileDir, backupDir: cfg.backupDir, message },
+      initialized: paths ? readUsers(paths.usersFile) !== null : false,
+      unlocked: !!s,
+      user: s?.user ?? null,
+      users: paths ? listUsers(paths.usersFile) : [],
+    };
+  };
+  const dataPathsOrThrow = (): DataPaths => {
+    if (state !== 'ok' || !paths) throw new Error('Папка данных недоступна');
+    return paths;
+  };
+  const pickFolder = async (title: string): Promise<string | null> => {
+    const win = getWindow();
+    const opts = { title, properties: ['openDirectory' as const, 'createDirectory' as const] };
+    const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
+    return res.canceled ? null : res.filePaths[0] ?? null;
   };
 
   const db = () => requireSession().db;
   const ctx = () => requireSession().ctx;
 
+  // ------------------------------------------------------- папка данных (самое начало)
+  handle('data:pick', async (): Promise<FolderPick | null> => {
+    const p = await pickFolder('Где хранить данные? Внутри создам папку RoyaltyLab');
+    return p ? { path: p, warning: cloudWarning(rootFromParent(p)) ?? cloudWarning(p) } : null;
+  }, { open: true });
+
+  handle('data:setup', ({ parent }) => {
+    if (state !== 'setup') throw new Error('Папка данных уже выбрана');
+    const root = parent ? rootFromParent(parent) : profileDir;
+    try {
+      mkdirSync(root, { recursive: true });
+      const probe = join(root, '.rl-write-test');
+      writeFileSync(probe, '');
+      rmSync(probe, { force: true });
+      ensureDataDirs(dataPaths(root, profileDir));
+    } catch {
+      throw new Error(`Не получилось создать папку «${root}». Проверьте, что диск подключён и есть права на запись.`);
+    }
+    writeConfig(cfgFile, { dataRoot: root, backupDir: null });
+    evaluate();
+    return status();
+  }, { open: true });
+
+  handle('data:relocate', async () => {
+    const picked = await pickFolder('Укажите папку с данными (где лежит data.rldb)');
+    if (picked) {
+      const root = findExistingRoot(picked);
+      if (!root) throw new Error('В этой папке нет файла data.rldb. Выберите папку RoyaltyLab с вашими данными.');
+      writeConfig(cfgFile, { ...readConfig(cfgFile), dataRoot: root });
+      evaluate();
+    }
+    return status();
+  }, { open: true });
+
+  handle('data:retry', () => { evaluate(); return status(); }, { open: true });
+  handle('data:quit', () => { quit(); }, { open: true });
+
+  handle('data:pickBackupDir', async (): Promise<FolderPick | null> => {
+    const cur = dataPathsOrThrow();
+    const p = await pickFolder('Папка для резервных копий (лучше на другом диске)');
+    if (!p) return null;
+    writeConfig(cfgFile, { ...readConfig(cfgFile), backupDir: p });
+    paths = dataPaths(cur.root, profileDir, p);
+    const s = getSession();
+    if (s) s.paths = paths;
+    const sameDrive = parse(p).root.toLowerCase() === parse(cur.root).root.toLowerCase();
+    return { path: p, warning: cloudWarning(p) ?? (sameDrive ? 'Копии лежат на том же диске, что и база: при поломке диска пропадёт всё сразу. Лучше выбрать другой диск.' : null) };
+  }, { open: true });
+
   // ------------------------------------------------------------------ вход
   handle('auth:status', () => status(), { open: true });
 
   handle('auth:init', async ({ login, password }) => {
-    ensureDataDirs(paths);
-    const { dk, replicaId, user } = await initVault(paths.usersFile, login, password);
-    const open = openEncryptedDb(paths.dbFile, dk, replicaId);
+    const P = dataPathsOrThrow();
+    const { dk, replicaId, user } = await initVault(P.usersFile, login, password);
+    const open = openEncryptedDb(P.dbFile, dk, replicaId);
     const c = { userId: user.login, replicaId };
     ensureDefaultSettings(open.db, c);
-    beginSession({ open, db: open.db, ctx: c, user: { login: user.login, role: user.role }, dk, paths });
+    beginSession({ open, db: open.db, ctx: c, user: { login: user.login, role: user.role }, dk, paths: P });
     return status();
   }, { open: true });
 
   handle('auth:login', async ({ login, password }) => {
+    const P = dataPathsOrThrow();
     try {
-      const { dk, replicaId, user } = await unlock(paths.usersFile, login, password);
-      const open = openEncryptedDb(paths.dbFile, dk, replicaId);
+      const { dk, replicaId, user } = await unlock(P.usersFile, login, password);
+      const open = openEncryptedDb(P.dbFile, dk, replicaId);
       const c = { userId: user.login, replicaId };
       ensureDefaultSettings(open.db, c);
-      beginSession({ open, db: open.db, ctx: c, user: { login: user.login, role: user.role }, dk, paths });
+      beginSession({ open, db: open.db, ctx: c, user: { login: user.login, role: user.role }, dk, paths: P });
       return status();
     } catch (e) {
       await sleep(600); // не даём перебирать пароли быстро
@@ -74,10 +174,55 @@ export function registerIpc(paths: DataPaths, getWindow: () => BrowserWindow | n
   }, { open: true });
 
   handle('auth:addUser', async ({ login, password, role }) => {
-    await addUser(paths.usersFile, requireSession().dk, login, password, role);
+    await addUser(requireSession().paths.usersFile, requireSession().dk, login, password, role);
   });
   handle('auth:changePassword', async ({ oldPassword, newPassword }) => {
-    await changePassword(paths.usersFile, requireSession().user.login, oldPassword, newPassword);
+    const s = requireSession();
+    await changePassword(s.paths.usersFile, s.user.login, oldPassword, newPassword);
+  });
+
+  // ------------------------------------------------------- фото и обложки
+  const photoOwner = (table: PhotoTable, id: string) => {
+    if (!(table in PHOTO_COLUMN)) throw new Error('Неизвестный тип картинки');
+    const row = db().prepare(`SELECT * FROM ${table} WHERE id = ? AND deleted_at IS NULL`).get(id);
+    if (!row) throw new Error('Карточка не найдена');
+    return row;
+  };
+  handle('photo:set', ({ table, id, full, thumb }) => {
+    const s = requireSession();
+    const row = photoOwner(table, id);
+    const col = PHOTO_COLUMN[table];
+    const file = savePhoto(s.paths.photos, s.dk, full, thumb);
+    updateRow(s.db, s.ctx, table, id, { [col]: file });
+    removePhoto(s.paths.photos, row[col] as string | null);
+    return file;
+  });
+  handle('photo:remove', ({ table, id }) => {
+    const s = requireSession();
+    const row = photoOwner(table, id);
+    const col = PHOTO_COLUMN[table];
+    updateRow(s.db, s.ctx, table, id, { [col]: null });
+    removePhoto(s.paths.photos, row[col] as string | null);
+  });
+  handle('photo:get', ({ file, thumb }) => {
+    const s = requireSession();
+    const buf = readPhoto(s.paths.photos, s.dk, file, thumb);
+    return buf ? `data:image/png;base64,${buf.toString('base64')}` : null;
+  });
+  handle('photo:export', async ({ table, id }) => {
+    const s = requireSession();
+    const row = photoOwner(table, id);
+    const file = row[PHOTO_COLUMN[table]] as string | null;
+    if (!file) throw new Error('Картинки нет');
+    const buf = readPhoto(s.paths.photos, s.dk, file, false);
+    if (!buf) throw new Error('Файл картинки не найден в папке данных');
+    const name = String(row.name ?? row.title ?? row.last_name ?? 'image').replace(/[\\/:*?"<>|]/g, '_');
+    const win = getWindow();
+    const opts = { title: 'Сохранить картинку', defaultPath: `${name}.png`, filters: [{ name: 'PNG', extensions: ['png'] }] };
+    const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
+    if (res.canceled || !res.filePath) return null;
+    writeFileSync(res.filePath, buf);
+    return res.filePath;
   });
 
   // ---------------------------------------------------------------- каталог
@@ -133,4 +278,5 @@ export function registerIpc(paths: DataPaths, getWindow: () => BrowserWindow | n
     const s = requireSession();
     return backupDb(s.db, s.open.file, s.paths.backups, 'manual');
   });
+  return { shutdown: () => { if (paths) releaseLock(paths.lockFile); } };
 }

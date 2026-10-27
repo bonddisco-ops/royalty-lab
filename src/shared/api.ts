@@ -6,7 +6,24 @@ import type { PlanSummary } from '../main/seed/starterPlan.ts';
 
 export type { Role, ArtistListItem, Dashboard, IssueView, PersonDetail, PersonListItem, TrackView, PlanSummary, Row };
 
+export type DataState = 'setup' | 'missing' | 'busy' | 'ok';
+export interface DataStatus {
+  state: DataState;
+  /** Папка данных (RoyaltyLab/) — для окна «Данные не найдены по пути …». */
+  path: string | null;
+  /** Стандартная папка данных в профиле пользователя — вариант «по умолчанию» в мастере. */
+  defaultRoot: string;
+  backupDir: string | null;
+  message?: string;
+}
+export interface FolderPick {
+  path: string;
+  warning: string | null;
+}
+export type PhotoTable = 'counterparty' | 'artist' | 'track';
+
 export interface AuthStatus {
+  data: DataStatus;
   initialized: boolean;
   unlocked: boolean;
   user: { login: string; role: Role } | null;
@@ -27,6 +44,16 @@ export interface Credentials {
 }
 
 export interface ChannelMap {
+  'data:pick': [void, FolderPick | null];
+  'data:setup': [{ parent: string | null }, AuthStatus];
+  'data:relocate': [void, AuthStatus];
+  'data:retry': [void, AuthStatus];
+  'data:quit': [void, void];
+  'data:pickBackupDir': [void, FolderPick | null];
+  'photo:set': [{ table: PhotoTable; id: string; full: Uint8Array; thumb: Uint8Array }, string];
+  'photo:remove': [{ table: PhotoTable; id: string }, void];
+  'photo:get': [{ file: string; thumb: boolean }, string | null];
+  'photo:export': [{ table: PhotoTable; id: string }, string | null];
   'auth:status': [void, AuthStatus];
   'auth:init': [Credentials, AuthStatus];
   'auth:login': [Credentials, AuthStatus];

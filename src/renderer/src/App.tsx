@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AuthStatus } from '../../shared/api.ts';
 import { call } from './api.ts';
+import { DataGate } from './views/DataGate.tsx';
 import { Login } from './views/Login.tsx';
 import { Home } from './views/Home.tsx';
 import { Tracks } from './views/Tracks.tsx';
@@ -30,6 +31,7 @@ export function App() {
   }, [auth?.unlocked, tick, tab]);
 
   if (!auth) return <div className="main dim">Загрузка…</div>;
+  if (auth.data.state !== 'ok') return <DataGate auth={auth} onAuth={setAuth} />;
   if (!auth.unlocked) return <Login auth={auth} onAuth={setAuth} />;
 
   return (

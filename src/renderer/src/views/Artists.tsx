@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ArtistListItem, PersonListItem } from '../../../shared/api.ts';
 import { call } from '../api.ts';
+import { Avatar } from '../Avatar.tsx';
+import { PhotoEditor } from '../PhotoEditor.tsx';
 
 export function Artists({ onChanged }: { onChanged: () => void }) {
   const [q, setQ] = useState('');
@@ -9,6 +11,7 @@ export function Artists({ onChanged }: { onChanged: () => void }) {
   const [name, setName] = useState('');
   const [variant, setVariant] = useState<Record<string, string>>({});
   const [err, setErr] = useState('');
+  const [photoFor, setPhotoFor] = useState<ArtistListItem | null>(null);
   const load = useCallback(() => { void call('artists:list', { q }).then(setRows); }, [q]);
   useEffect(() => { const h = setTimeout(load, 150); return () => clearTimeout(h); }, [load]);
   useEffect(() => { void call('people:list', {}).then(setPeople); }, []);
@@ -26,7 +29,7 @@ export function Artists({ onChanged }: { onChanged: () => void }) {
         <thead><tr><th>Артист</th><th>Человек (получатель)</th><th>Написания</th><th>Треков</th></tr></thead>
         <tbody>{rows.map((a) => (
           <tr key={a.id}>
-            <td>{a.name}{a.withoutContract && <span className="badge bad">нет договора</span>}</td>
+            <td><div className="nameCell"><Avatar file={a.photo} onClick={() => setPhotoFor(a)} title="Фото артиста" />{a.name}{a.withoutContract && <span className="badge bad">нет договора</span>}</div></td>
             <td><select value={a.counterpartyId ?? ''} onChange={(e) => run(() => call('artists:update', { id: a.id, patch: { counterparty_id: e.target.value || null } }))}>
               <option value="">— не привязан —</option>{people.map((p) => <option key={p.id} value={p.id}>{p.display}</option>)}</select></td>
             <td>{a.variants.map((v) => <span key={v} className="badge">{v}</span>)}
@@ -35,6 +38,7 @@ export function Artists({ onChanged }: { onChanged: () => void }) {
             <td className="dim">{a.tracks}</td>
           </tr>))}</tbody>
       </table>
+      {photoFor && <PhotoEditor table="artist" id={photoFor.id} file={photoFor.photo} title={photoFor.name} onClose={(ch) => { setPhotoFor(null); if (ch) load(); }} />}
     </>
   );
 }

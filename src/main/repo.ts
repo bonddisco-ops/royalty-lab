@@ -37,6 +37,7 @@ export interface PersonListItem {
   filled: number;
   total: number;
   problems: number;
+  photo: string | null;
 }
 
 export function personDisplay(r: Row): string {
@@ -54,7 +55,7 @@ export function listPeople(db: Db, q = ''): PersonListItem[] {
     const k = contracts.filter((x) => x.counterparty_id === c.id).map((x) => String(x.number));
     if (needle && !normKey([personDisplay(c), ...a, ...k].join(' ')).includes(needle)) continue;
     const comp = completeness(c);
-    out.push({ id: c.id, display: personDisplay(c), status: c.status, artists: a, contracts: k, filled: comp.filled, total: comp.total, problems: checkPerson(c).length });
+    out.push({ id: c.id, display: personDisplay(c), status: c.status, artists: a, contracts: k, filled: comp.filled, total: comp.total, problems: checkPerson(c).length, photo: c.photo_file ?? null });
   }
   return out;
 }
@@ -112,11 +113,13 @@ export interface ArtistListItem {
   variants: string[];
   tracks: number;
   withoutContract: boolean;
+  /** Своё фото артиста, а если нет — фото человека (иначе null = заглушка). */
+  photo: string | null;
 }
 
 export function listArtists(db: Db, q = ''): ArtistListItem[] {
   const needle = normKey(q);
-  const arts = db.prepare('SELECT a.id, a.name, a.counterparty_id, c.last_name, c.first_name, c.middle_name FROM artist a LEFT JOIN counterparty c ON c.id = a.counterparty_id AND c.deleted_at IS NULL WHERE a.deleted_at IS NULL ORDER BY a.name').all();
+  const arts = db.prepare('SELECT a.id, a.name, a.counterparty_id, a.photo_file AS own_photo, c.photo_file AS person_photo, c.last_name, c.first_name, c.middle_name FROM artist a LEFT JOIN counterparty c ON c.id = a.counterparty_id AND c.deleted_at IS NULL WHERE a.deleted_at IS NULL ORDER BY a.name').all();
   const variants = db.prepare('SELECT artist_id, variant_norm FROM artist_name_variant WHERE deleted_at IS NULL').all();
   const counts = new Map(db.prepare('SELECT artist_id, count(DISTINCT track_id) AS n FROM participation WHERE deleted_at IS NULL GROUP BY artist_id').all().map((r) => [r.artist_id as string, Number(r.n)]));
   const withContract = new Set(db.prepare('SELECT DISTINCT counterparty_id FROM contract WHERE deleted_at IS NULL').all().map((r) => r.counterparty_id as string));
@@ -129,6 +132,7 @@ export function listArtists(db: Db, q = ''): ArtistListItem[] {
       variants: variants.filter((v) => v.artist_id === a.id).map((v) => String(v.variant_norm)),
       tracks: counts.get(a.id) ?? 0,
       withoutContract: !a.counterparty_id || !withContract.has(a.counterparty_id),
+      photo: a.own_photo ?? a.person_photo ?? null,
     });
   }
   return out;
@@ -196,6 +200,7 @@ export interface TrackView {
   id: string;
   title: string;
   isrc: string | null;
+  cover: string | null;
   codes: string[];
   participants: ParticipantView[];
   sumAuthors: string;
@@ -206,7 +211,7 @@ export interface TrackView {
 
 export function listTracks(db: Db, q = '', onlyProblems = false): TrackView[] {
   const needle = normKey(q);
-  const tracks = db.prepare('SELECT id, title, isrc FROM track WHERE deleted_at IS NULL ORDER BY title').all();
+  const tracks = db.prepare('SELECT id, title, isrc, cover_file FROM track WHERE deleted_at IS NULL ORDER BY title').all();
   const codes = db.prepare("SELECT track_id, value_norm FROM track_identifier WHERE kind = 'distributor_code' AND deleted_at IS NULL").all();
   const parts = db.prepare(
     `SELECT p.*, a.name AS artist_name, c.number AS contract_number, pc.last_name AS payee_last, pc.first_name AS payee_first
@@ -229,7 +234,7 @@ export function listTracks(db: Db, q = '', onlyProblems = false): TrackView[] {
     const sa = sumDec(ps.map((p) => p.share_authors));
     const sr = sumDec(ps.map((p) => p.share_related));
     const view: TrackView = {
-      id: t.id, title: t.title, isrc: t.isrc, codes: tc,
+      id: t.id, title: t.title, isrc: t.isrc, cover: t.cover_file ?? null, codes: tc,
       participants: ps.map((p) => ({
         id: p.id, artistId: p.artist_id, artist: p.artist_name, shareAuthors: p.share_authors, shareRelated: p.share_related,
         labelRate: p.label_rate, payeeCounterpartyId: p.payee_counterparty_id,
