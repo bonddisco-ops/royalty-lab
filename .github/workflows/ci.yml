@@ -16,3 +16,6 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npx electron-vite build
+      - name: Проверка - в main-бандле не должно остаться внешних require кроме нативной базы и electron
+        run: |
+          node -e "const s=require('fs').readFileSync('out/main/index.js','utf8');const m=[...s.matchAll(/require\(['\"]([^'\".\/][^'\"]*)['\"]\)/g)].map(x=>x[1]).filter(x=>!x.startsWith('node:'));const ok=new Set(['electron','better-sqlite3-multiple-ciphers','fs','path','os','crypto','events','stream','util','buffer','zlib','assert','child_process','url','http','https','net','tls','string_decoder','constants','timers','readline','process','module','worker_threads','perf_hooks','v8','vm','querystring','tty']);const bad=[...new Set(m)].filter(x=>!ok.has(x));console.log('внешние require:',[...new Set(m)].join(', '));if(bad.length){console.error('ЛИШНИЕ:',bad.join(', '));process.exit(1)}"

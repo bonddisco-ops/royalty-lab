@@ -1,4 +1,4 @@
-import ExcelJS from 'exceljs';
+import type ExcelJS from 'exceljs';
 import { SHEET_NAMES, type Matrix, type StarterSheets } from './starterParse.ts';
 
 function cellText(v: ExcelJS.CellValue): string {
@@ -28,7 +28,9 @@ function sheetToMatrix(ws: ExcelJS.Worksheet): Matrix {
 }
 
 export async function readStarterWorkbook(path: string): Promise<StarterSheets> {
-  const wb = new ExcelJS.Workbook();
+  // exceljs подгружаем только когда он нужен (тяжёлая библиотека; не должна ронять запуск программы)
+  const mod = (await import('exceljs')) as unknown as { default?: typeof import('exceljs') } & typeof import('exceljs');
+  const wb = new (mod.default ?? mod).Workbook();
   await wb.xlsx.readFile(path);
   const get = (name: string): Matrix => {
     const ws = wb.getWorksheet(name);
