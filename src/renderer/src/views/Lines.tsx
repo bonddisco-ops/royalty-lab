@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Facets, LineFilter, LinePage, LineRow, LineSort, StreamKind, UiField } from '../../../shared/api.ts';
+import type { Facets, LineHistory, LineFilter, LinePage, LineRow, LineSort, StreamKind, UiField } from '../../../shared/api.ts';
 import { call } from '../api.ts';
 import { RIGHTS_SHORT, STREAM_SHORT, fmtInt, fmtKop, kopToInput, quarterLabel } from '../util.ts';
 import { BulkDialog, HistoryDialog } from './LinesBulk.tsx';
@@ -86,6 +86,7 @@ export function Lines({ onChanged }: { onChanged: () => void }) {
   const [bulk, setBulk] = useState(false);
   const [history, setHistory] = useState(false);
   const [split, setSplit] = useState<LineRow | null>(null);
+  const [hist, setHist] = useState<LineRow | null>(null);
 
   const filter: LineFilter = { ...f, quarter };
   const key = JSON.stringify([filter, sort, offset]);
@@ -150,7 +151,7 @@ export function Lines({ onChanged }: { onChanged: () => void }) {
             const lock = r.hasSplit && !moved;
             const ch = (k: string) => r.changed.includes(k);
             return (
-              <tr key={r.key} style={moved ? { background: '#7fb56b14' } : undefined}>
+              <tr key={r.key} style={moved ? { background: '#7fb56b14' } : undefined} title={r.changed.length > 0 ? `Строка изменена${r.lastEditBy ? `: ${r.lastEditBy}` : ''}${r.lastEditAt ? `, ${new Date(r.lastEditAt).toLocaleString('ru-RU')}` : ''}. Исходные значения — в ячейках «было» и в истории (🕘)` : undefined}>
                 <td>{r.distributor}</td><td className="dim">{RIGHTS_SHORT[r.rights]}</td><td>{r.artist}</td>
                 <td>{r.title}{moved && <span className="badge ok" title="Перенесённая часть">перенос</span>}{!r.trackId && <span className="badge bad" title="Трек не найден в каталоге">нет трека</span>}</td>
                 <td className="mono dim">{r.isrc ?? r.code}</td><td>{r.platform}</td>
@@ -163,6 +164,7 @@ export function Lines({ onChanged }: { onChanged: () => void }) {
                   options={Object.entries(STREAM_SHORT)} onCommit={(v) => edit(r, 'stream_kind', v)} />
                 <td style={{ whiteSpace: 'nowrap' }}>
                   {!moved && !r.hasSplit && r.qty > 1 && <button className="link" title="Перенести часть прослушиваний в другой тип" onClick={() => setSplit(r)}>⇄</button>}
+                  {r.changed.length > 0 && <button className="link" title="Что было исходно, кто и когда менял" onClick={() => setHist(r)}>🕘</button>}
                   {!moved && r.changed.length > 0 && <button className="link" title="Вернуть исходные значения" onClick={() => run(() => call('lines:revert', { lineId: r.lineId }))}>↩</button>}
                 </td>
               </tr>
@@ -180,6 +182,7 @@ export function Lines({ onChanged }: { onChanged: () => void }) {
       {page && page.total === 0 && <div className="drop" style={{ marginTop: 12 }}>{quarters.length === 0 ? 'Сначала загрузите отчёты во вкладке «Отчёты».' : 'Под фильтры ничего не попало.'}</div>}
       {bulk && page && <BulkDialog filter={filter} total={page.total} onClose={(changed) => { setBulk(false); if (changed) after(); }} />}
       {history && <HistoryDialog onClose={(changed) => { setHistory(false); if (changed) after(); }} />}
+      {hist && <HistoryOfLine row={hist} onClose={() => setHist(null)} />}
       {split && <SplitDialog row={split} onClose={() => setSplit(null)} onDone={() => { setSplit(null); after(); }} />}
     </>
   );
@@ -213,3 +216,32 @@ function SplitDialog({ row, onClose, onDone }: { row: LineRow; onClose: () => vo
   );
 }
 
+
+function HistoryOfLine({ row, onClose }: { row: LineRow; onClose: () => void }) {
+  const [h, setH] = useState<LineHistory | null>(null);
+  const [err, setErr] = useState('');
+  useEffect(() => { void call('lines:history', { lineId: row.lineId }).then(setH).catch((e: Error) => setErr(e.message)); }, [row.lineId]);
+  return (
+    <div className="modal"><div className="dialog" style={{ maxWidth: 720 }}>
+      <h2>История строки</h2>
+      {err && <div className="err">{err}</div>}
+      {h && (
+        <>
+          <div className="card">
+            <b>Как пришло от дистрибьютора (не меняется никогда)</b>
+            <div>{h.original.title} · {h.original.platform} · {h.original.usage}</div>
+            <div>Тираж {fmtInt(h.original.qty)} · роялти <b>{fmtKop(h.original.royaltyKop)}</b> · ставка {h.original.rate ?? '—'} ₽ · {STREAM_SHORT[h.original.streamKind]}</div>
+          </div>
+          <h3>Правки по порядку</h3>
+          {h.steps.length === 0 && <div className="dim">Правок нет.</div>}
+          <table><tbody>{h.steps.map((s) => (
+            <tr key={s.id} style={s.active ? undefined : { opacity: 0.5, textDecoration: 'line-through' }}>
+              <td>{new Date(s.at).toLocaleString('ru-RU')}</td><td>{s.by ?? '—'}</td><td>{s.what}</td><td className="mono">{s.value}</td>
+              <td className="dim">{s.batchId ? 'массовая правка' : ''}{s.active ? '' : ' · отменена'}</td>
+            </tr>))}</tbody></table>
+        </>
+      )}
+      <div className="row end"><button onClick={onClose}>Закрыть</button></div>
+    </div></div>
+  );
+}

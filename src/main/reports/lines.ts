@@ -37,6 +37,9 @@ export interface LineRow {
   hasSplit: boolean;
   /** Сколько действующих переносов у исходной строки. */
   splitCount: number;
+  /** Кто и когда последним правил строку (для подсказки). */
+  lastEditBy: string | null;
+  lastEditAt: string | null;
 }
 
 export interface LineFilter {
@@ -87,22 +90,26 @@ function loadVersionFull(db: Db, versionId: string): VersionCache {
   ).get(versionId);
   if (!head) return empty;
   const edits = new Map<string, EditRec[]>();
+  const last = new Map<string, { by: string | null; at: string }>();
   for (const e of db.prepare(
-    `SELECT e.id, e.line_id, e.field, e.new_value FROM line_edit e JOIN statement_line l ON l.id = e.line_id
+    `SELECT e.id, e.line_id, e.field, e.new_value, e.updated_by, e.created_at FROM line_edit e JOIN statement_line l ON l.id = e.line_id
       WHERE l.report_version_id = ? AND e.reverted_at IS NULL AND e.deleted_at IS NULL ORDER BY e.id`,
   ).all(versionId)) {
     const a = edits.get(e.line_id) ?? [];
     a.push({ id: e.id, lineId: e.line_id, field: e.field, newValue: e.new_value });
     edits.set(e.line_id, a);
+    last.set(e.line_id, { by: e.updated_by, at: e.created_at });
   }
   const splits = new Map<string, SplitRec[]>();
   for (const s of db.prepare(
-    `SELECT s.id, s.line_id, s.qty_moved, s.to_stream_kind, s.to_usage_type, s.rate_per_stream FROM line_split s JOIN statement_line l ON l.id = s.line_id
+    `SELECT s.id, s.line_id, s.qty_moved, s.to_stream_kind, s.to_usage_type, s.rate_per_stream, s.updated_by, s.created_at FROM line_split s JOIN statement_line l ON l.id = s.line_id
       WHERE l.report_version_id = ? AND s.reverted_at IS NULL AND s.deleted_at IS NULL ORDER BY s.id`,
   ).all(versionId)) {
     const a = splits.get(s.line_id) ?? [];
     a.push({ id: s.id, lineId: s.line_id, qtyMoved: s.qty_moved, toStreamKind: s.to_stream_kind, toUsageType: s.to_usage_type, ratePerStream: s.rate_per_stream });
     splits.set(s.line_id, a);
+    const prev = last.get(s.line_id);
+    if (!prev || prev.at < s.created_at) last.set(s.line_id, { by: s.updated_by, at: s.created_at });
   }
   const titles = new Map<string, string>();
   for (const t of db.prepare('SELECT id, title FROM track WHERE deleted_at IS NULL').all()) titles.set(t.id, t.title);
@@ -127,6 +134,7 @@ function loadVersionFull(db: Db, versionId: string): VersionCache {
         trackTitle: p.trackId ? titles.get(p.trackId) ?? null : null,
         origQty: moved ? 0 : l.qty, origRoyaltyKop: moved ? 0 : l.royalty_kop, origRate: moved ? null : origRate, origStreamKind: l.stream_kind, origUsage: l.usage_type,
         changed: p.changed, hasSplit: sp.length > 0, splitCount: sp.length,
+        lastEditBy: last.get(l.id)?.by ?? null, lastEditAt: last.get(l.id)?.at ?? null,
       });
     }
   }
@@ -220,4 +228,46 @@ export function findLine(db: Db, lineId: string): LineRow[] {
   const v = db.prepare('SELECT report_version_id FROM statement_line WHERE id = ?').get(lineId);
   if (!v) return [];
   return loadVersion(db, v.report_version_id).filter((r) => r.lineId === lineId);
+}
+
+export interface LineHistory {
+  original: { title: string | null; platform: string | null; usage: string | null; qty: number; royaltyKop: number; rate: string | null; streamKind: string };
+  steps: Array<{
+    id: string;
+    kind: 'edit' | 'split';
+    what: string;
+    value: string | null;
+    by: string | null;
+    at: string;
+    active: boolean;
+    batchId: string | null;
+  }>;
+}
+
+const FIELD_TITLES: Record<string, string> = {
+  qty: 'Тираж', royalty_kop: 'Роялти (коп.)', rate_per_stream: 'Ставка за прослушивание', stream_kind: 'Тип стрима', usage_type: 'Вид использования', track_id: 'Трек',
+};
+
+/** Полная история правок строки, включая отменённые: исходные значения всегда остаются неизменными. */
+export function lineHistory(db: Db, lineId: string): LineHistory {
+  const l = db.prepare('SELECT * FROM statement_line WHERE id = ?').get(lineId);
+  if (!l) throw new Error('Строка не найдена');
+  const steps: LineHistory['steps'] = [];
+  for (const e of db.prepare('SELECT * FROM line_edit WHERE line_id = ? AND deleted_at IS NULL ORDER BY id').all(lineId)) {
+    steps.push({ id: e.id, kind: 'edit', what: FIELD_TITLES[e.field] ?? e.field, value: e.new_value, by: e.updated_by, at: e.created_at, active: !e.reverted_at, batchId: e.batch_id });
+  }
+  for (const s of db.prepare('SELECT * FROM line_split WHERE line_id = ? AND deleted_at IS NULL ORDER BY id').all(lineId)) {
+    steps.push({
+      id: s.id, kind: 'split', what: 'Перенос прослушиваний', by: s.updated_by, at: s.created_at, active: !s.reverted_at, batchId: s.batch_id,
+      value: `${s.qty_moved} шт. → ${s.to_stream_kind}${s.rate_per_stream ? `, ставка ${s.rate_per_stream} ₽` : ''}`,
+    });
+  }
+  steps.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+  return {
+    original: {
+      title: l.title_raw, platform: l.platform, usage: l.usage_type, qty: l.qty, royaltyKop: l.royalty_kop, streamKind: l.stream_kind,
+      rate: l.qty > 0 ? rateToRubString({ n: BigInt(l.royalty_kop), d: BigInt(l.qty) }) : null,
+    },
+    steps,
+  };
 }

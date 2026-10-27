@@ -112,3 +112,19 @@ test('правка перенесённой части: тираж возвра�
   assert.equal(queryLines(db, { quarter: '2026Q2', q: 'song a' }).rows.length, 1);
   assert.equal(queryLines(db, { quarter: '2026Q2', q: 'song a' }).rows[0]!.royaltyKop, 3500);
 });
+
+test('история строки: исходные значения неизменны, правки с автором, отменённые остаются', async () => {
+  const { lineHistory } = await import('./lines.ts');
+  const { db } = setup();
+  const line = queryLines(db, { quarter: '2026Q2', q: 'song a' }).rows[0]!.lineId;
+  editLine(db, ctx, line, 'qty', '2000');
+  editLine(db, ctx, line, 'royalty', '40');
+  const row = queryLines(db, { quarter: '2026Q2', q: 'song a' }).rows[0]!;
+  assert.equal(row.lastEditBy, 'owner');
+  revertLine(db, ctx, line);
+  const h = lineHistory(db, line);
+  assert.equal(h.original.qty, 1000);
+  assert.equal(h.original.royaltyKop, 3500);
+  assert.equal(h.steps.length, 2);
+  assert.ok(h.steps.every((s) => !s.active && s.by === 'owner'));
+});

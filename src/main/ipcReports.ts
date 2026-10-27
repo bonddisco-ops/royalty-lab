@@ -8,7 +8,7 @@ import { insertRow, updateRow } from './db/mutate.ts';
 import { uuidv7 } from './domain/ids.ts';
 import { applyBulk, listBatches, planBulk, revertBatch } from './reports/bulk.ts';
 import { editLine, revertLine, splitLine } from './reports/edits.ts';
-import { lineFacets, queryLines } from './reports/lines.ts';
+import { lineFacets, lineHistory, queryLines } from './reports/lines.ts';
 import { aliasUnknownArtist, createArtistFromUnknown, createTrackFromUnmatched, linkUnmatchedToTrack } from './reports/resolve.ts';
 import { CUSTOM_FIELDS, FIELD_TITLES, fingerprintOf, matchSavedFormat, parseCustom, proposeMapping, type CustomMapping, type Fingerprint } from './reports/custom.ts';
 import { detectBuiltin } from './reports/detect.ts';
@@ -153,6 +153,7 @@ export function registerReportsIpc(handle: HandleFn, getWindow: () => BrowserWin
 
   // ------------------------------------------------ таблица строк и правки (этап 3)
   handle('lines:query', ({ filter, sort, offset, limit }) => queryLines(requireSession().db, filter, sort, offset ?? 0, Math.min(limit ?? 200, 500)));
+  handle('lines:history', ({ lineId }) => lineHistory(requireSession().db, lineId));
   handle('lines:facets', ({ quarter }) => lineFacets(requireSession().db, quarter));
   handle('lines:edit', ({ lineId, field, value, splitId }) => {
     const s = requireSession();

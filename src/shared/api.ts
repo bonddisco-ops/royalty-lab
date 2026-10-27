@@ -10,9 +10,9 @@ import type { Flow, StreamKind } from '../main/reports/types.ts';
 import type { VersionItem } from '../main/reports/replace.ts';
 import type { BatchItem, BulkAction, BulkPlan } from '../main/reports/bulk.ts';
 import type { UiField } from '../main/reports/edits.ts';
-import type { Facets, LineFilter, LinePage, LineRow, LineSort } from '../main/reports/lines.ts';
+import type { Facets, LineFilter, LineHistory, LinePage, LineRow, LineSort } from '../main/reports/lines.ts';
 
-export type { VersionItem, BatchItem, BulkAction, BulkPlan, UiField, Facets, LineFilter, LinePage, LineRow, LineSort, StreamKind };
+export type { LineHistory, VersionItem, BatchItem, BulkAction, BulkPlan, UiField, Facets, LineFilter, LinePage, LineRow, LineSort, StreamKind };
 export type { ImportPreview, CustomField, CustomMapping, QuarterPanel, ReportListItem, Flow };
 export type { Role, ArtistListItem, Dashboard, IssueView, PersonDetail, PersonListItem, TrackView, PlanSummary, Row };
 
@@ -101,6 +101,7 @@ export interface ChannelMap {
   'wizard:info': [{ id: string; sheet?: string; headerRow?: number }, WizardInfo];
   'wizard:apply': [{ id: string; mapping: CustomMapping }, ImportItem];
   'lines:query': [{ filter: LineFilter; sort?: LineSort; offset?: number; limit?: number }, LinePage];
+  'lines:history': [{ lineId: string }, LineHistory];
   'lines:facets': [{ quarter?: string }, Facets];
   'lines:edit': [{ lineId: string; field: UiField; value: string | null; splitId?: string | null }, void];
   'lines:split': [{ lineId: string; qtyMoved: number; toKind: StreamKind; rate?: string | null }, void];
