@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import type { AppendixDraft, AppendixListItem, Block, ContractDetail, ContractEdit, ContractListItem, ContractPreview, DraftTrack, FieldDef, PBlock, PersonListItem, Seg, TrackHit } from '../../../shared/api.ts';
+import type { AppendixDraft, AppendixListItem, Block, ContractDetail, ContractEdit, ContractListItem, ContractPreview, DraftTrack, FieldDef, PBlock, PendingTrack, PersonListItem, Seg, TrackHit } from '../../../shared/api.ts';
 import { call } from '../api.ts';
 import { useNav } from '../nav.tsx';
 import { norm, useSort } from '../sort.tsx';
@@ -33,7 +33,7 @@ export function Contracts({ onChanged }: { onChanged: () => void }) {
   const needle = norm(q.trim());
   const shown = (list ?? []).filter((c) => !needle || norm(`${c.person} ${c.number} ${c.date ?? ''}`).includes(needle));
   const shownMissing = missing.filter((m) => !needle || norm(m.person).includes(needle));
-  const { sorted, th } = useSort(shown, { number: (c) => c.number, date: (c) => c.date, person: (c) => c.person, kind: (c) => c.kind, threshold: (c) => c.thresholdRub, apps: (c) => c.appendices });
+  const { sorted, th } = useSort(shown, { number: (c) => c.number, date: (c) => c.date, person: (c) => c.person, kind: (c) => c.kind, threshold: (c) => c.thresholdRub, apps: (c) => c.appendices, pending: (c) => c.pending });
   if (editing) return <Editor detail={editing} onClose={() => { setEditing(null); load(); onChanged(); }} />;
   return (
     <>
@@ -47,13 +47,13 @@ export function Contracts({ onChanged }: { onChanged: () => void }) {
       {list && list.length === 0 && missing.length === 0 && <div className="drop">Договоров пока нет. «Новый договор» — выберите человека (ИП или самозанятый) и откроется текст договора с полями, которые можно править.</div>}
       {list && (list.length > 0 || missing.length > 0) && (
         <table>
-          <thead><tr>{th('number', 'Номер')}{th('date', 'Дата')}{th('person', 'Человек')}{th('kind', 'Статус')}{th('threshold', 'Порог, ₽')}{th('apps', 'Приложений')}<th /></tr></thead>
+          <thead><tr>{th('number', 'Номер')}{th('date', 'Дата')}{th('person', 'Человек')}{th('kind', 'Статус')}{th('threshold', 'Порог, ₽')}{th('apps', 'Приложений')}{th('pending', 'Ждут внесения')}<th /></tr></thead>
           <tbody>
             {shownMissing.map((m) => {
               const ok = m.status === 'ip' || m.status === 'sz';
               return (
                 <tr key={'m' + m.id} className="redrow">
-                  <td colSpan={2}><span className="badge bad">договор не создан</span></td><td>{m.person}</td><td>{ok ? KIND[m.status] : '—'}</td><td colSpan={2} className="dim">{ok ? '' : 'сначала укажите статус ИП/самозанятый в карточке человека'}</td>
+                  <td colSpan={2}><span className="badge bad">договор не создан</span></td><td>{m.person}</td><td>{ok ? KIND[m.status] : '—'}</td><td colSpan={3} className="dim">{ok ? '' : 'сначала укажите статус ИП/самозанятый в карточке человека'}</td>
                   <td>{ok ? <button className="primary" onClick={() => create(m.id)}>Создать договор</button> : <button onClick={() => nav.go('people', { personId: m.id })}>Открыть человека</button>}</td>
                 </tr>
               );
@@ -61,7 +61,7 @@ export function Contracts({ onChanged }: { onChanged: () => void }) {
             {sorted.map((c) => (
               <tr key={c.id}>
                 <td>{c.number}</td><td>{fmtDate(c.date)}</td><td>{c.person}</td><td>{c.kind ? KIND[c.kind] ?? c.kind : '—'}</td>
-                <td>{c.thresholdRub === null ? '—' : c.thresholdRub.toLocaleString('ru-RU')}</td><td>{c.appendices}</td>
+                <td>{c.thresholdRub === null ? '—' : c.thresholdRub.toLocaleString('ru-RU')}</td><td>{c.appendices}</td><td>{c.pending > 0 ? <span className="badge bad">{c.pending} {c.pending === 1 ? 'трек' : 'треков'}</span> : <span className="dim">—</span>}</td>
                 <td><button onClick={() => open(c.id)}>Открыть</button></td>
               </tr>))}
           </tbody>
@@ -111,7 +111,10 @@ function Editor({ detail, onClose }: { detail: ContractDetail; onClose: () => vo
   const [pv, setPv] = useState<ContractPreview | null>(null);
   const [tab, setTab] = useState<'contract' | 'appendix'>('contract');
   const [apps, setApps] = useState<AppendixListItem[]>(detail.appendices);
-  const [openApp, setOpenApp] = useState<{ id: string | null } | null>(null);
+  const [pending, setPending] = useState<PendingTrack[]>(detail.pending);
+  const [picked, setPicked] = useState<string[] | null>(null);
+  const [openApp, setOpenApp] = useState<{ id: string | null; tracks?: string[] | null } | null>(null);
+  const refresh = (id: string) => call('contracts:get', { id }).then((d) => { setApps(d.appendices); setPending(d.pending); });
   const [err, setErr] = useState('');
   const [info, setInfo] = useState('');
   const [busy, setBusy] = useState(false);
@@ -133,7 +136,7 @@ function Editor({ detail, onClose }: { detail: ContractDetail; onClose: () => vo
     try {
       const id = await call('contracts:save', edit);
       setEdit((e) => ({ ...e, id })); setDirty(false); setInfo('Сохранено');
-      const d = await call('contracts:get', { id }); setApps(d.appendices);
+      await refresh(id);
       return id;
     } catch (e) { setErr((e as Error).message); return null; } finally { setBusy(false); }
   };
@@ -208,11 +211,32 @@ function Editor({ detail, onClose }: { detail: ContractDetail; onClose: () => vo
       {tab === 'appendix' && (
         edit.id
           ? openApp
-            ? <AppendixEditor contractId={edit.id} appendixId={openApp.id} number={edit.number} onBack={(changed) => { setOpenApp(null); if (changed) void call('contracts:get', { id: edit.id! }).then((d) => setApps(d.appendices)); }} />
+            ? <AppendixEditor contractId={edit.id} appendixId={openApp.id} onlyTracks={openApp.tracks ?? null} number={edit.number} onBack={(changed) => { setOpenApp(null); setPicked(null); void refresh(edit.id!); void changed; }} />
             : (
               <>
+                {pending.length > 0 && (() => {
+                  const sel = picked ?? pending.map((t) => t.trackId);
+                  const nextNo = Math.max(0, ...apps.map((a) => a.number)) + 1;
+                  return (
+                    <div className="warn" style={{ marginBottom: 12 }}>
+                      <b>Ждут внесения в приложение: {pending.length}</b> <span className="dim">— доли уже заданы в «Треках», в приложение они ещё не попали</span>
+                      <table style={{ marginTop: 8 }}>
+                        <thead><tr><th /><th>Трек</th><th>Артисты</th><th>Авт.</th><th>Смеж.</th><th>Ставка</th><th /></tr></thead>
+                        <tbody>{pending.map((t) => (
+                          <tr key={t.trackId}>
+                            <td><input type="checkbox" checked={sel.includes(t.trackId)} onChange={(e) => setPicked(e.target.checked ? [...sel, t.trackId] : sel.filter((x) => x !== t.trackId))} /></td>
+                            <td>{t.title}</td><td>{t.artists}</td><td>{t.shareAuthors || '—'}</td><td>{t.shareRelated || '—'}</td><td>{t.rate || '—'}</td>
+                            <td>{t.ready ? '' : <span className="badge bad" title="Доли ещё не заполнены">нет долей</span>} <button onClick={() => setOpenApp({ id: null, tracks: [t.trackId] })}>В новое приложение</button></td>
+                          </tr>))}</tbody>
+                      </table>
+                      <div className="row" style={{ marginTop: 8 }}>
+                        <button className="primary" disabled={sel.length === 0} onClick={() => setOpenApp({ id: null, tracks: sel })}>Создать приложение № {nextNo} из выбранных ({sel.length})</button>
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div className="bar"><div className="grow" /><button className="primary" onClick={() => setOpenApp({ id: null })}>Новое приложение</button></div>
-                {apps.length === 0 && <div className="drop">Приложений нет. «Новое приложение» подтянет треки, у которых в «Треки → участие» выбран этот договор.</div>}
+                {apps.length === 0 && pending.length === 0 && <div className="drop">Приложений нет. Когда в «Треки» у человека появятся доли по этому договору, треки сами появятся здесь списком «Ждут внесения».</div>}
                 {apps.length > 0 && <table><thead><tr><th>№</th><th>Дата</th><th>Строк в таблице треков</th><th /></tr></thead><tbody>{apps.map((a) => (
                   <tr key={a.id}><td>Приложение № {a.number}</td><td>{fmtDate(a.date)}</td><td>{a.items}</td><td><button onClick={() => setOpenApp({ id: a.id })}>Открыть</button></td></tr>))}</tbody></table>}
                 {apps.length > 0 && (
@@ -301,7 +325,7 @@ function Grid<T extends object>({ rows, cols, onChange, onRemove }: { rows: T[];
   );
 }
 
-function AppendixEditor({ contractId, appendixId, number, onBack }: { contractId: string; appendixId: string | null; number: string; onBack: (changed: boolean) => void }) {
+function AppendixEditor({ contractId, appendixId, onlyTracks, number, onBack }: { contractId: string; appendixId: string | null; onlyTracks?: string[] | null; number: string; onBack: (changed: boolean) => void }) {
   const [d, setD] = useState<AppendixDraft | null>(null);
   const [id, setId] = useState<string | null>(appendixId);
   const [err, setErr] = useState('');
@@ -310,7 +334,7 @@ function AppendixEditor({ contractId, appendixId, number, onBack }: { contractId
   const [q, setQ] = useState('');
   const [hits, setHits] = useState<TrackHit[]>([]);
   const [changed, setChanged] = useState(false);
-  useEffect(() => { void call('appendix:draft', { contractId, appendixId }).then(setD).catch((e: Error) => setErr(e.message)); }, [contractId, appendixId]);
+  useEffect(() => { void call('appendix:draft', { contractId, appendixId, trackIds: onlyTracks ?? null }).then(setD).catch((e: Error) => setErr(e.message)); }, [contractId, appendixId, onlyTracks]);
   useEffect(() => { if (q.trim().length < 2) { setHits([]); return; } void call('tracks:search', { q }).then(setHits); }, [q]);
   if (!d) return <div className="dim">{err || 'Загрузка…'}</div>;
   const upd = (f: (x: AppendixDraft) => AppendixDraft) => { setD((x) => (x ? f(x) : x)); setInfo(''); };

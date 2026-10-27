@@ -20,7 +20,7 @@ function Participant({ p, trackId, bad, reload }: { p: TrackView['participants']
   return (
     <>
       <div className="part">
-        <div>{p.artist}{p.person ? <span className="dim"> → {p.person}</span> : <button className="badge bad" style={{ marginLeft: 6 }} title="Привязать артиста к человеку" onClick={() => nav.go('artists', { query: p.artist })}>нет человека</button>}{p.duplicate && <span className="badge bad">дубль</span>}<div className="dim" style={{ fontSize: 12 }}>{p.contractId ? <ContractLink id={p.contractId} opts={{ trackId, artist: p.artist }}>{p.contract}</ContractLink> : (p.contract ?? 'нет договора')}{p.payee ? ` · получатель: ${p.payee}` : ''}</div></div>
+        <div>{p.artist}{p.person ? <span className="dim"> → {p.person}</span> : <button className="badge bad" style={{ marginLeft: 6 }} title="Привязать артиста к человеку" onClick={() => nav.go('artists', { query: p.artist })}>нет человека</button>}{p.duplicate && <span className="badge bad">дубль</span>}<div className="dim" style={{ fontSize: 12 }}>{p.contractId ? <ContractLink id={p.contractId} opts={{ trackId, artist: p.artist }}>{p.contract}</ContractLink> : (p.contract ?? 'нет договора')}{p.payee ? ` · получатель: ${p.payee}` : ''}{p.contractId && (p.appendixNo !== null ? <span className="badge ok" style={{ marginLeft: 6 }}>в приложении № {p.appendixNo}</span> : <button className="badge bad" style={{ marginLeft: 6 }} title="Трек ещё не внесён в приложение. Открыть договор" onClick={() => nav.go('contracts', { contractId: p.contractId })}>не внесён в приложение</button>)}</div></div>
         <input value={a} onChange={(e) => setA(e.target.value)} title="Авторские, %" />
         <input value={r} onChange={(e) => setR(e.target.value)} title="Смежные, %" />
         <input value={rate} onChange={(e) => setRate(e.target.value)} title="Ставка лейбла, %" placeholder="ставка" />
@@ -83,6 +83,12 @@ export function Tracks({ onChanged }: { onChanged: () => void }) {
   const [title, setTitle] = useState('');
   const [isrc, setIsrc] = useState('');
   const [err, setErr] = useState('');
+  const [qTitle, setQTitle] = useState('');
+  const [qArtist, setQArtist] = useState('');
+  const [qA, setQA] = useState('100');
+  const [qR, setQR] = useState('100');
+  const [qRate, setQRate] = useState('');
+  const [qMsg, setQMsg] = useState<{ text: string; artist?: string; ok: boolean } | null>(null);
 
   const load = useCallback(() => { void call('tracks:list', { q, onlyProblems }).then(setRows); }, [q, onlyProblems]);
   useEffect(() => { const h = setTimeout(load, 150); return () => clearTimeout(h); }, [load]);
@@ -94,9 +100,32 @@ export function Tracks({ onChanged }: { onChanged: () => void }) {
     setErr('');
     try { await call('tracks:create', { title, isrc: isrc.trim() || null }); setAdding(false); setTitle(''); setIsrc(''); reload(); } catch (e) { setErr((e as Error).message); }
   }
+  async function quickAdd() {
+    setQMsg(null);
+    try {
+      const r = await call('tracks:quickAdd', { title: qTitle, artistName: qArtist, shareAuthors: pctInput(qA), shareRelated: pctInput(qR), labelRate: qRate.trim() ? pctInput(qRate) : null });
+      setQMsg(r.personId
+        ? { ok: true, text: `Трек «${qTitle.trim()}» добавлен, артист «${qArtist.trim()}» уже привязан к человеку: ${r.person}.` }
+        : { ok: false, artist: qArtist.trim(), text: `Трек «${qTitle.trim()}» добавлен. ${r.artistCreated ? 'Артист новый' : 'Артист не привязан к человеку'}: привяжите человека, иначе выплату некому начислить.` });
+      setQTitle(''); setQArtist(''); void call('artists:list', {}).then(setArtists); reload();
+    } catch (e) { setQMsg({ ok: false, text: (e as Error).message }); }
+  }
   return (
     <>
       <h1>Треки</h1>
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div className="dim" style={{ marginBottom: 6 }}>Быстрое внесение трека, по которому ещё нет отчётов</div>
+        <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <label className="f" style={{ width: 260 }}>Название<input value={qTitle} onChange={(e) => setQTitle(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && qTitle.trim() && qArtist.trim()) void quickAdd(); }} /></label>
+          <label className="f" style={{ width: 220 }}>Артист<input list="quick-artists" value={qArtist} onChange={(e) => setQArtist(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && qTitle.trim() && qArtist.trim()) void quickAdd(); }} /></label>
+          <datalist id="quick-artists">{artists.map((a) => <option key={a.id} value={a.name} />)}</datalist>
+          <label className="f" style={{ width: 90 }}>Авт., %<input value={qA} onChange={(e) => setQA(e.target.value)} /></label>
+          <label className="f" style={{ width: 90 }}>Смеж., %<input value={qR} onChange={(e) => setQR(e.target.value)} /></label>
+          <label className="f" style={{ width: 100 }}>Ставка, %<input placeholder="позже" value={qRate} onChange={(e) => setQRate(e.target.value)} /></label>
+          <button className="primary" disabled={!qTitle.trim() || !qArtist.trim()} onClick={() => void quickAdd()}>Добавить трек</button>
+        </div>
+        {qMsg && <div className={qMsg.ok ? 'okmsg' : 'warn'} style={{ marginTop: 8 }}>{qMsg.text}{qMsg.artist && <button className="link" onClick={() => nav.go('artists', { query: qMsg.artist })}>Привязать человека →</button>}</div>}
+      </div>
       <div className="bar">
         <input placeholder="Поиск по названию, ISRC, артисту, коду…" value={q} onChange={(e) => setQ(e.target.value)} />
         <label className="row"><input type="checkbox" style={{ width: 'auto' }} checked={onlyProblems} onChange={(e) => setOnlyProblems(e.target.checked)} />только с проблемами</label>

@@ -15,14 +15,14 @@ import type { OpeningItem, OpeningListItem, OpeningMatch, OpeningParsedRow } fro
 import type { VersionItem } from '../main/reports/replace.ts';
 import type { BatchItem, BulkAction, BulkPlan } from '../main/reports/bulk.ts';
 import type { UiField } from '../main/reports/edits.ts';
-import type { AppendixDraft, AppendixListItem, ContractDetail, ContractEdit, ContractListItem, ContractPreview, DraftTrack, ExportRequest } from '../main/contracts/service.ts';
+import type { AppendixDraft, AppendixListItem, ContractDetail, ContractEdit, ContractListItem, ContractPreview, DraftTrack, ExportRequest, PendingTrack } from '../main/contracts/service.ts';
 import type { Block, PBlock, Seg } from '../main/contracts/blocks.ts';
 import type { FieldDef } from '../main/contracts/fields.ts';
 import type { UpdatePreview } from '../main/sync/exchange.ts';
 import type { Facets, LineFilter, LineHistory, LinePage, LineRow, LineSort } from '../main/reports/lines.ts';
 
 export type { UpdatePreview };
-export type { AppendixDraft, AppendixListItem, ContractDetail, ContractEdit, ContractListItem, ContractPreview, DraftTrack, ExportRequest, Block, PBlock, Seg, FieldDef };
+export type { PendingTrack, AppendixDraft, AppendixListItem, ContractDetail, ContractEdit, ContractListItem, ContractPreview, DraftTrack, ExportRequest, Block, PBlock, Seg, FieldDef };
 export type { GroupCalc, Problem, QuarterCalc, PayoutRow, PayoutsView, StatementInfo };
 export type { LineHistory, VersionItem, BatchItem, BulkAction, BulkPlan, UiField, Facets, LineFilter, LinePage, LineRow, LineSort, StreamKind };
 export type { ImportPreview, CustomField, CustomMapping, QuarterPanel, ReportListItem, Flow };
@@ -159,7 +159,7 @@ export interface ChannelMap {
   'contracts:save': [ContractEdit, string];
   'contracts:delete': [{ id: string }, void];
   'contracts:export': [{ req: ExportRequest; edit: ContractEdit | null; draft: AppendixDraft | null }, { path: string }];
-  'appendix:draft': [{ contractId: string; appendixId?: string | null }, AppendixDraft];
+  'appendix:draft': [{ contractId: string; appendixId?: string | null; trackIds?: string[] | null }, AppendixDraft];
   'appendix:track': [{ contractId: string; trackId: string; date: string }, DraftTrack];
   'appendix:save': [{ contractId: string; draft: AppendixDraft }, string];
   'appendix:delete': [{ id: string }, void];
@@ -196,6 +196,7 @@ export interface ChannelMap {
   'artists:update': [{ id: string; patch: { name?: string; counterparty_id?: string | null; notes?: string | null } }, void];
   'artists:addVariant': [{ id: string; text: string }, void];
   'tracks:list': [{ q?: string; onlyProblems?: boolean }, TrackView[]];
+  'tracks:quickAdd': [{ title: string; artistName: string; isrc?: string | null; shareAuthors?: string | null; shareRelated?: string | null; labelRate?: string | null }, { trackId: string; artistId: string; artistCreated: boolean; personId: string | null; person: string | null }];
   'tracks:create': [{ title: string; isrc?: string | null }, string];
   'tracks:update': [{ id: string; patch: { title?: string; isrc?: string | null; version?: string | null; notes?: string | null } }, void];
   'parts:add': [{ trackId: string; artistId: string; shareAuthors: string; shareRelated: string; labelRate: string | null; payeeCounterpartyId?: string | null }, string];

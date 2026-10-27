@@ -1,7 +1,7 @@
 // Договоры: список, создание, правка условий, приложения (черновик из участий), выгрузка в Word и PDF.
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DEC_ONE, formatDec, parseDec } from '../domain/dec.ts';
+import { DEC_ONE, formatDec, parseDec, sumDec } from '../domain/dec.ts';
 import { insertRow, updateRow, deleteRow } from '../db/mutate.ts';
 import { closeNoContractIssue } from '../repo.ts';
 import type { Ctx, Db, Row } from '../db/types.ts';
@@ -50,12 +50,15 @@ export interface ContractEdit {
 }
 
 export interface AppendixListItem { id: string; number: number; date: string | null; status: string; items: number }
+/** Трек, по которому у человека уже есть доли, но он ещё не внесён ни в одно приложение. */
+export interface PendingTrack { trackId: string; title: string; artists: string; shareAuthors: string; shareRelated: string; rate: string; ready: boolean }
 export interface ContractDetail extends ContractEdit {
   person: string;
   kind: 'ip' | 'sz' | null;
   appendices: AppendixListItem[];
+  pending: PendingTrack[];
 }
-export interface ContractListItem { id: string; counterpartyId: string; person: string; kind: string | null; number: string; date: string | null; thresholdRub: number | null; appendices: number; hasTerms: boolean }
+export interface ContractListItem { id: string; counterpartyId: string; person: string; kind: string | null; number: string; date: string | null; thresholdRub: number | null; appendices: number; hasTerms: boolean; pending: number }
 export interface ContractPreview { blocks: Block[]; missing: string[]; errors: string[]; kind: 'ip' | 'sz' }
 
 const todayIso = (): string => new Date().toISOString().slice(0, 10);
@@ -70,7 +73,47 @@ export function listContracts(db: Db): ContractListItem[] {
   return rows.map((r) => ({
     id: r.id, counterpartyId: r.counterparty_id, person: personName(r), kind: r.cp_status ?? null, number: r.number, date: r.date ?? null,
     thresholdRub: r.threshold_rub === null || r.threshold_rub === undefined ? null : Number(r.threshold_rub) / 100, appendices: Number(r.app_count), hasTerms: !!r.terms_json,
+    pending: pendingParts(db, r.id).size,
   }));
+}
+
+/**
+ * Участия, которые относятся к договору, но не внесены в приложение: либо явно привязаны к этому договору, либо принадлежат его человеку
+ * (получатель выплаты или владелец артиста), если договор у человека единственный. Результат сгруппирован по трекам.
+ */
+function pendingParts(db: Db, contractId: string): Map<string, Row[]> {
+  const k = db.prepare('SELECT counterparty_id FROM contract WHERE id = ? AND deleted_at IS NULL').get(contractId);
+  const out = new Map<string, Row[]>();
+  if (!k) return out;
+  const single = Number(db.prepare('SELECT count(*) n FROM contract WHERE counterparty_id = ? AND deleted_at IS NULL').get(k.counterparty_id)!.n) === 1;
+  const rows = db.prepare(
+    `SELECT p.*, a.name AS artist_name, a.counterparty_id AS a_cp, t.title AS track_title
+       FROM participation p JOIN artist a ON a.id = p.artist_id JOIN track t ON t.id = p.track_id
+      WHERE p.deleted_at IS NULL AND t.deleted_at IS NULL AND p.appendix_id IS NULL ORDER BY t.title, a.name`,
+  ).all();
+  for (const p of rows) {
+    const mine = p.contract_id === contractId || (!p.contract_id && single && (p.payee_counterparty_id ?? p.a_cp) === k.counterparty_id);
+    if (!mine) continue;
+    const list = out.get(p.track_id) ?? [];
+    list.push(p);
+    out.set(p.track_id, list);
+  }
+  return out;
+}
+
+export function pendingTracks(db: Db, contractId: string): PendingTrack[] {
+  const res: PendingTrack[] = [];
+  for (const [trackId, ps] of pendingParts(db, contractId)) {
+    const sa = sumDec(ps.map((p) => p.share_authors));
+    const sr = sumDec(ps.map((p) => p.share_related));
+    res.push({
+      trackId, title: String(ps[0]!.track_title),
+      artists: ps.map((p) => p.artist_name).filter((v, i, a) => a.indexOf(v) === i).join(', '),
+      shareAuthors: pct(formatDec(sa)), shareRelated: pct(formatDec(sr)), rate: ps[0]!.label_rate ? pct(ps[0]!.label_rate) : '',
+      ready: sa > 0n || sr > 0n,
+    });
+  }
+  return res;
 }
 
 export interface MissingContractItem { id: string; person: string; status: string }
@@ -97,7 +140,7 @@ export function newContract(db: Db, counterpartyId: string): ContractDetail {
   if (!c) throw new Error('Человек не найден');
   const kind = c.status === 'ip' || c.status === 'sz' ? (c.status as 'ip' | 'sz') : null;
   const t = defaultTerms();
-  return { id: null, counterpartyId, number: suggestNumber(db, c), date: todayIso(), fields: t.fields, options: t.options, okved: null, person: personName(c), kind, appendices: [] };
+  return { id: null, counterpartyId, number: suggestNumber(db, c), date: todayIso(), fields: t.fields, options: t.options, okved: null, person: personName(c), kind, appendices: [], pending: [] };
 }
 
 /** Подсказка номера: ПР-ИП/КОД/ГГ или ПР-СЗ/КОД/ГГ. Код — из латинских букв псевдонима артиста либо инициалов. */
@@ -123,6 +166,7 @@ export function getContract(db: Db, id: string): ContractDetail {
     id, counterpartyId: r.counterparty_id, number: r.number, date: r.date ?? todayIso(), fields: t.fields, options: t.options, okved: t.okved,
     person: personName(c), kind: c.status === 'ip' || c.status === 'sz' ? c.status : null,
     appendices: apps.map((a) => ({ id: a.id, number: Number(a.number), date: a.date ?? null, status: a.status, items: Number(a.n) })),
+    pending: pendingTracks(db, id),
   };
 }
 
@@ -186,7 +230,10 @@ export function trackRow(db: Db, contractId: string, trackId: string, appDate: s
     `SELECT p.*, a.name AS artist_name, a.counterparty_id AS a_cp FROM participation p JOIN artist a ON a.id = p.artist_id
       WHERE p.track_id = ? AND p.deleted_at IS NULL ORDER BY a.name`,
   ).all(trackId);
-  const mine = parts.find((p) => p.contract_id === contractId) ?? parts.find((p) => (p.payee_counterparty_id ?? p.a_cp) === k?.counterparty_id) ?? null;
+  const ofPerson = parts.filter((p) => p.contract_id === contractId || (p.payee_counterparty_id ?? p.a_cp) === k?.counterparty_id);
+  const mine = ofPerson[0] ?? null;
+  // несколько артистов одного человека — доли складываются
+  const sumShare = (col: 'share_authors' | 'share_related'): string => (ofPerson.length ? pct(formatDec(sumDec(ofPerson.map((p) => p[col])))) : '');
   const prev = db.prepare(
     `SELECT payload_json FROM appendix_item WHERE track_id = ? AND kind = 'works' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1`,
   ).get(trackId);
@@ -198,7 +245,7 @@ export function trackRow(db: Db, contractId: string, trackId: string, appDate: s
     performers: parts.map((p) => p.artist_name).filter((v, i, a) => a.indexOf(v) === i).join(', '),
     lyricists: old.lyricists ?? '', composers: old.composers ?? '', makers: old.makers ?? '',
     year: old.year ?? year,
-    shareAuthors: mine ? pct(mine.share_authors) : '', shareRelated: mine ? pct(mine.share_related) : '',
+    shareAuthors: sumShare('share_authors'), shareRelated: sumShare('share_related'),
     term: rangeOf(mine?.term_from ?? null, mine?.term_to ?? null, appDate),
     explicit: t.explicit ? 'да' : 'нет',
     rate: mine?.label_rate ? pct(mine.label_rate) : '',
@@ -223,7 +270,7 @@ function normalizeTrackRow(db: Db, contractId: string, item: Row, appDate: strin
   return { ...base, title: base.title || str(p.title_raw), performers: base.performers || str(p.performers_raw), term: str(p.term_raw) || base.term };
 }
 
-export function draftAppendix(db: Db, contractId: string, appendixId: string | null): AppendixDraft {
+export function draftAppendix(db: Db, contractId: string, appendixId: string | null, onlyTracks?: string[] | null): AppendixDraft {
   if (appendixId) {
     const a = db.prepare('SELECT * FROM appendix WHERE id = ? AND contract_id = ? AND deleted_at IS NULL').get(appendixId, contractId);
     if (!a) throw new Error('Приложение не найдено');
@@ -238,10 +285,7 @@ export function draftAppendix(db: Db, contractId: string, appendixId: string | n
   }
   const no = Number(db.prepare('SELECT max(number) AS m FROM appendix WHERE contract_id = ? AND deleted_at IS NULL').get(contractId)?.m ?? 0) + 1;
   const date = todayIso();
-  const trackIds = db.prepare(
-    `SELECT DISTINCT p.track_id FROM participation p JOIN track t ON t.id = p.track_id
-      WHERE p.contract_id = ? AND p.appendix_id IS NULL AND p.deleted_at IS NULL AND t.deleted_at IS NULL ORDER BY t.title`,
-  ).all(contractId).map((r) => r.track_id as string);
+  const trackIds = pendingTracks(db, contractId).map((t) => t.trackId).filter((id) => !onlyTracks || onlyTracks.includes(id));
   return { appendixId: null, no, date, tracks: trackIds.map((id) => trackRow(db, contractId, id, date)), videos: [], images: [] };
 }
 
@@ -259,11 +303,20 @@ export function saveAppendix(db: Db, ctx: Ctx, contractId: string, d: AppendixDr
     let id = d.appendixId;
     if (id) {
       updateRow(db, ctx, 'appendix', id, { number: d.no, date: d.date });
+      // убранные из таблицы треки возвращаются в очередь «ждут внесения»
+      for (const p of db.prepare('SELECT id FROM participation WHERE appendix_id = ? AND deleted_at IS NULL').all(id)) updateRow(db, ctx, 'participation', p.id, { appendix_id: null });
       for (const i of db.prepare('SELECT id FROM appendix_item WHERE appendix_id = ? AND deleted_at IS NULL').all(id)) deleteRow(db, ctx, 'appendix_item', i.id);
     } else id = insertRow(db, ctx, 'appendix', { contract_id: contractId, number: d.no, date: d.date, status: 'draft' });
     for (const t of d.tracks) {
       insertRow(db, ctx, 'appendix_item', { appendix_id: id, track_id: t.trackId, participation_id: t.participationId, kind: 'works', payload_json: t.row });
       if (t.participationId) updateRow(db, ctx, 'participation', t.participationId, { appendix_id: id, contract_id: contractId });
+      // остальные участия этого человека в треке (другие его артисты) тоже считаются внесёнными
+      if (t.trackId) {
+        const own = db.prepare('SELECT counterparty_id FROM contract WHERE id = ?').get(contractId)?.counterparty_id;
+        for (const p of pendingParts(db, contractId).get(t.trackId) ?? []) {
+          if ((p.payee_counterparty_id ?? p.a_cp) === own || p.contract_id === contractId) updateRow(db, ctx, 'participation', p.id, { appendix_id: id, contract_id: contractId });
+        }
+      }
     }
     for (const v of d.videos) insertRow(db, ctx, 'appendix_item', { appendix_id: id, kind: 'video', payload_json: v });
     for (const v of d.images) insertRow(db, ctx, 'appendix_item', { appendix_id: id, kind: 'images', payload_json: v });

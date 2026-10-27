@@ -151,3 +151,21 @@ test('треки: люди по долям — коллаб двух людей 
   assert.ok(v.people.some((x) => x.personId === null && x.artists[0] === 'Free'));
   assert.equal(v.participants.find((x) => x.artist === 'Solo')!.person, 'Второй Семён');
 });
+
+import { quickAddTrack, listTracks as listTracksQ } from './repo.ts';
+test('быстрое внесение трека: известный артист привязывается, новый создаётся без человека, дубль отклоняется', () => {
+  const db = freshDb();
+  const c = { userId: 'owner', replicaId: 'r1' };
+  const p = createPerson(db, c, { last_name: 'Иванов', first_name: 'Иван' } as never);
+  const a = createArtist(db, c, { name: 'Vasya Pupkin', counterparty_id: p });
+  const r1 = quickAddTrack(db, c, { title: 'Новый трек', artistName: '  vasya  pupkin ' });
+  assert.equal(r1.artistCreated, false);
+  assert.equal(r1.artistId, a);
+  assert.equal(r1.personId, p);
+  const r2 = quickAddTrack(db, c, { title: 'Другой', artistName: 'Совсем Новый' });
+  assert.equal(r2.artistCreated, true);
+  assert.equal(r2.personId, null);
+  assert.throws(() => quickAddTrack(db, c, { title: 'новый ТРЕК', artistName: 'Vasya Pupkin' }), /уже есть/);
+  const t = listTracksQ(db).find((x) => x.id === r2.trackId)!;
+  assert.equal(t.participants[0]!.shareAuthors, '1');
+});

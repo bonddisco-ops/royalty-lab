@@ -20,7 +20,7 @@ export function registerContractsIpc(handle: HandleFn): void {
     const path = await exportContractFile(s.db, s.paths.output, req, edit, draft, (html) => contractHtmlToPdf(html, headerLogoBase64()));
     return { path };
   });
-  handle('appendix:draft', ({ contractId, appendixId }) => draftAppendix(requireSession().db, contractId, appendixId ?? null));
+  handle('appendix:draft', ({ contractId, appendixId, trackIds }) => draftAppendix(requireSession().db, contractId, appendixId ?? null, trackIds ?? null));
   handle('appendix:track', ({ contractId, trackId, date }) => trackRow(requireSession().db, contractId, trackId, date));
   handle('appendix:save', ({ contractId, draft }) => { const s = requireSession(); return saveAppendix(s.db, s.ctx, contractId, draft); });
   handle('appendix:delete', ({ id }) => { const s = requireSession(); deleteAppendix(s.db, s.ctx, id); });

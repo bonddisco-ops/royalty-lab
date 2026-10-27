@@ -8,7 +8,8 @@ import { ensureDefaultSettings } from '../db/init.ts';
 import { insertRow } from '../db/mutate.ts';
 import { unzipAll } from '../export/zipReader.ts';
 import { defaultTerms } from './fields.ts';
-import { deleteContract, draftAppendix, exportContractFile, getContract, listContracts, newContract, previewContract, saveAppendix, saveContract, trackRow, type ContractEdit } from './service.ts';
+import { addParticipation } from '../repo.ts';
+import { deleteContract, draftAppendix, pendingTracks, exportContractFile, getContract, listContracts, newContract, previewContract, saveAppendix, saveContract, trackRow, type ContractEdit } from './service.ts';
 
 const ctx = { userId: 'owner', replicaId: 'r1' };
 
@@ -155,4 +156,26 @@ test('приложение из стартовой базы («сырые» по
   assert.equal(d.tracks[0]!.row.term, '2025-2035');
   assert.equal(d.tracks[1]!.row.title, 'Без трека');
   assert.equal(d.tracks[1]!.row.performers, 'Кто-то');
+});
+
+test('очередь «ждут внесения»: участие привязывается к договору само, доли двух артистов человека складываются, убранный трек возвращается', () => {
+  const { db, cp, artist, track } = setup('sz');
+  const id = saveContract(db, ctx, edit(cp));
+  const second = insertRow(db, ctx, 'artist', { name: 'Tester Alias', counterparty_id: cp });
+  const p1 = addParticipation(db, ctx, { trackId: track, artistId: artist, shareAuthors: '0.2', shareRelated: '0.3', labelRate: '0.8' });
+  addParticipation(db, ctx, { trackId: track, artistId: second, shareAuthors: '0.1', shareRelated: '0.2', labelRate: '0.8' });
+  assert.equal(db.prepare('SELECT contract_id FROM participation WHERE id = ?').get(p1)!.contract_id, id);
+  const pend = pendingTracks(db, id);
+  assert.equal(pend.length, 1);
+  assert.equal(pend[0]!.shareAuthors, '30%');
+  assert.equal(pend[0]!.shareRelated, '50%');
+  assert.equal(listContracts(db)[0]!.pending, 1);
+  assert.equal(getContract(db, id).pending.length, 1);
+  assert.equal(draftAppendix(db, id, null, ['нет-такого']).tracks.length, 0);
+  const d = draftAppendix(db, id, null, [track]);
+  assert.equal(d.tracks[0]!.row.shareAuthors, '30%');
+  const aid = saveAppendix(db, ctx, id, d);
+  assert.equal(pendingTracks(db, id).length, 0); // обе записи человека внесены
+  saveAppendix(db, ctx, id, { ...draftAppendix(db, id, aid), tracks: [] });
+  assert.equal(pendingTracks(db, id).length, 1); // трек убрали из таблицы — снова в очереди
 });

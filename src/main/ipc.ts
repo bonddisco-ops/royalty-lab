@@ -241,6 +241,7 @@ export function registerIpc(profileDir: string, getWindow: () => BrowserWindow |
   handle('artists:update', ({ id, patch }) => repo.updateArtist(db(), ctx(), id, patch));
   handle('artists:addVariant', ({ id, text }) => repo.addArtistVariant(db(), ctx(), id, text));
   handle('tracks:list', ({ q, onlyProblems }) => repo.listTracks(db(), q, !!onlyProblems));
+  handle('tracks:quickAdd', (d) => repo.quickAddTrack(db(), ctx(), d));
   handle('tracks:create', (d) => repo.createTrack(db(), ctx(), d));
   handle('tracks:update', ({ id, patch }) => repo.updateTrack(db(), ctx(), id, patch));
   handle('parts:add', (d) => repo.addParticipation(db(), ctx(), d));

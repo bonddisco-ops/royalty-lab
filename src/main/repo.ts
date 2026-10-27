@@ -225,6 +225,7 @@ export interface ParticipantView {
   contract: string | null;
   contractId: string | null;
   appendixId: string | null;
+  appendixNo: number | null;
   notes: string | null;
   duplicate: boolean;
   /** Кто реально получает деньги: явный получатель или человек, к которому привязан артист. */
@@ -254,10 +255,11 @@ export function listTracks(db: Db, q = '', onlyProblems = false): TrackView[] {
   const tracks = db.prepare('SELECT id, title, isrc, cover_file FROM track WHERE deleted_at IS NULL ORDER BY title').all();
   const codes = db.prepare("SELECT track_id, value_norm FROM track_identifier WHERE kind = 'distributor_code' AND deleted_at IS NULL").all();
   const parts = db.prepare(
-    `SELECT p.*, a.name AS artist_name, c.number AS contract_number, pc.last_name AS payee_last, pc.first_name AS payee_first
+    `SELECT p.*, a.name AS artist_name, c.number AS contract_number, ap.number AS appendix_number, pc.last_name AS payee_last, pc.first_name AS payee_first
        FROM participation p
        JOIN artist a ON a.id = p.artist_id
        LEFT JOIN contract c ON c.id = p.contract_id
+       LEFT JOIN appendix ap ON ap.id = p.appendix_id AND ap.deleted_at IS NULL
        LEFT JOIN counterparty pc ON pc.id = p.payee_counterparty_id
       WHERE p.deleted_at IS NULL ORDER BY a.name`,
   ).all();
@@ -283,7 +285,7 @@ export function listTracks(db: Db, q = '', onlyProblems = false): TrackView[] {
         id: p.id, artistId: p.artist_id, artist: p.artist_name, shareAuthors: p.share_authors, shareRelated: p.share_related,
         labelRate: p.label_rate, payeeCounterpartyId: p.payee_counterparty_id,
         payee: p.payee_counterparty_id ? [p.payee_last, p.payee_first].filter(Boolean).join(' ') : null,
-        contract: p.contract_number, contractId: p.contract_id, appendixId: p.appendix_id, notes: p.notes,
+        contract: p.contract_number, contractId: p.contract_id, appendixId: p.appendix_id, appendixNo: p.appendix_number === null || p.appendix_number === undefined ? null : Number(p.appendix_number), notes: p.notes,
         duplicate: (seen.get(`${p.artist_id}|${p.payee_counterparty_id ?? ''}`) ?? 0) > 1,
         personId: p.payee_counterparty_id ?? artistPerson.get(p.artist_id) ?? null,
         person: ((): string | null => { const pid = p.payee_counterparty_id ?? artistPerson.get(p.artist_id) ?? null; return pid ? persons.get(pid) ?? null : null; })(),
@@ -322,6 +324,33 @@ export function createTrack(db: Db, ctx: Ctx, data: { title: string; isrc?: stri
     })();
     return id;
   });
+}
+
+export interface QuickTrackInput { title: string; artistName: string; isrc?: string | null; shareAuthors?: string | null; shareRelated?: string | null; labelRate?: string | null }
+export interface QuickTrackResult { trackId: string; artistId: string; artistCreated: boolean; personId: string | null; person: string | null }
+
+/**
+ * Быстрое внесение трека, по которому ещё не было отчётов: название + имя артиста.
+ * Артист находится по имени (с учётом вариантов написания); если его нет — создаётся новый без человека, привязать нужно позже.
+ * Доли по умолчанию 100% / 100% на этого артиста, ставку можно не указывать.
+ */
+export function quickAddTrack(db: Db, ctx: Ctx, d: QuickTrackInput): QuickTrackResult {
+  const title = cleanText(d.title);
+  const artistName = cleanText(d.artistName);
+  if (!title) throw new Error('Нужно название трека');
+  if (!artistName) throw new Error('Нужно имя артиста');
+  return friendly(() => db.transaction(() => {
+    const found = db.prepare('SELECT a.id, a.counterparty_id FROM artist a JOIN artist_name_variant v ON v.artist_id = a.id AND v.deleted_at IS NULL WHERE a.deleted_at IS NULL AND v.variant_norm = ?').get(normKey(artistName));
+    const artistId: string = found ? found.id : createArtist(db, ctx, { name: artistName });
+    const personId: string | null = found?.counterparty_id ?? null;
+    const dup = db.prepare('SELECT t.id FROM track t JOIN participation p ON p.track_id = t.id AND p.deleted_at IS NULL WHERE t.deleted_at IS NULL AND p.artist_id = ?').all(artistId)
+      .some((r) => normKey(String(db.prepare('SELECT title FROM track WHERE id = ?').get(r.id)?.title ?? '')) === normKey(title));
+    if (dup) throw new Error(`У артиста «${artistName}» уже есть трек «${title}»`);
+    const trackId = createTrack(db, ctx, { title, isrc: d.isrc ?? null });
+    addParticipation(db, ctx, { trackId, artistId, shareAuthors: d.shareAuthors || '1', shareRelated: d.shareRelated || '1', labelRate: d.labelRate || null });
+    const person = personId ? db.prepare('SELECT last_name, first_name, middle_name FROM counterparty WHERE id = ?').get(personId) : null;
+    return { trackId, artistId, artistCreated: !found, personId, person: person ? personDisplay(person) : null };
+  })());
 }
 
 export function updateTrack(db: Db, ctx: Ctx, id: string, patch: { title?: string; isrc?: string | null; version?: string | null; notes?: string | null }): void {
@@ -368,7 +397,11 @@ export interface ParticipationInput {
 }
 
 export function addParticipation(db: Db, ctx: Ctx, d: ParticipationInput): string {
+  // если у человека ровно один договор — привязываем участие к нему сразу, чтобы трек попал в очередь «ждут внесения в приложение»
+  const pid: string | null = d.payeeCounterpartyId ?? db.prepare('SELECT counterparty_id FROM artist WHERE id = ?').get(d.artistId)?.counterparty_id ?? null;
+  const own = pid ? db.prepare('SELECT id FROM contract WHERE counterparty_id = ? AND deleted_at IS NULL').all(pid) : [];
   return insertRow(db, ctx, 'participation', {
+    contract_id: own.length === 1 ? own[0]!.id : null,
     track_id: d.trackId, artist_id: d.artistId,
     share_authors: checkShare('Авторские', d.shareAuthors)!, share_related: checkShare('Смежные', d.shareRelated)!,
     label_rate: checkShare('Ставка лейбла', d.labelRate, true), payee_counterparty_id: d.payeeCounterpartyId ?? null,
