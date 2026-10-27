@@ -6,7 +6,9 @@ import { ensureDefaultSettings } from '../db/init.ts';
 import { insertRow, updateRow } from '../db/mutate.ts';
 import { commitImport, sha256Hex } from '../reports/importer.ts';
 import { parseKnown } from '../reports/parse.ts';
+import type { WorkbookData } from '../reports/types.ts';
 import { computeQuarter } from './calc.ts';
+type Cell = string | number | null;
 import { commitOpening, listOpening, matchOpeningName, parseOpeningXlsx } from './opening.ts';
 
 const ctx = { userId: 'owner', replicaId: 'r1' };
@@ -27,7 +29,7 @@ function setup(threshold: number | null) {
   return { db, cp, contract, artist, other };
 }
 
-const sheet = (rows: unknown[][]) => ({ fileName: 'o.xlsx', sheets: [{ name: 'FINANCE', rows: [[null, null, null, '2026 Q3'], [], ...rows] }] });
+const sheet = (rows: Cell[][]): WorkbookData => ({ fileName: 'o.xlsx', sheets: [{ name: 'FINANCE', rows: [[null, null, null, '2026 Q3'], [], ...rows] }] });
 const HEAD = [null, null, null, 'Артист', null, 'Входящий остаток Q1', null, 'Начислено за Q2', 'К выплате', 'Входящий остаток'];
 
 test('разбор Excel: квартал, остаток берётся из последней колонки, «ИТОГО» останавливает, расхождения с формулой помечаются', () => {
