@@ -27,6 +27,8 @@ export const DATA_TABLES = [
   'line_edit',
   'line_split',
   'edit_batch',
+  'payout_period',
+  'payout_statement',
 ] as const;
 export type DataTable = (typeof DATA_TABLES)[number];
 
@@ -299,11 +301,49 @@ CREATE INDEX ix_split_line ON line_split(line_id);
 CREATE INDEX ix_split_batch ON line_split(batch_id);
 `;
 
+// M005 (этап 4, Схема_БД §8): итоги выплат по получателю и выданные комплекты (Excel + PDF).
+// Начисления (accrual) отдельной таблицей не хранятся: они целиком выводятся из эффективных строк и участий,
+// а итог по получателю округляется вниз до копейки (решение заказчика), поэтому построчных копеек нет.
+const M005 = `
+CREATE TABLE payout_period (
+  id TEXT PRIMARY KEY,
+  counterparty_id TEXT NOT NULL REFERENCES counterparty(id),
+  contract_id TEXT REFERENCES contract(id),
+  quarter TEXT NOT NULL,
+  accrued_kop INTEGER NOT NULL DEFAULT 0,
+  carried_in_kop INTEGER NOT NULL DEFAULT 0,
+  payable_kop INTEGER NOT NULL DEFAULT 0,
+  carried_out_kop INTEGER NOT NULL DEFAULT 0,
+  threshold_applied INTEGER NOT NULL DEFAULT 0,
+  accumulated_total_kop INTEGER NOT NULL DEFAULT 0,
+  paid_kop INTEGER,
+  paid_date TEXT,
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','ready','paid')),
+  ${STD}
+);
+CREATE UNIQUE INDEX ux_payout_period ON payout_period(counterparty_id, ifnull(contract_id, ''), quarter) WHERE deleted_at IS NULL;
+
+CREATE TABLE payout_statement (
+  id TEXT PRIMARY KEY,
+  payout_period_id TEXT NOT NULL REFERENCES payout_period(id),
+  version_no INTEGER NOT NULL,
+  xlsx_file TEXT,
+  pdf_file TEXT,
+  generated_at TEXT NOT NULL,
+  generated_by TEXT,
+  source_versions_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'current' CHECK (status IN ('current','stale')),
+  ${STD}
+);
+CREATE INDEX ix_statement_period ON payout_statement(payout_period_id);
+`;
+
 export const MIGRATIONS: Array<{ version: number; sql: string }> = [
   { version: 1, sql: M001 },
   { version: 2, sql: M002 },
   { version: 3, sql: M003 },
   { version: 4, sql: M004 },
+  { version: 5, sql: M005 },
 ];
 
 export function currentVersion(db: Db): number {

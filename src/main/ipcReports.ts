@@ -1,11 +1,15 @@
 // IPC импорта отчётов: выбор файлов пачкой, предпросмотр, мастер незнакомого формата, запись, действия «Проверить».
-import { dialog, type BrowserWindow } from 'electron';
+import { dialog, shell, type BrowserWindow } from 'electron';
+import { resolve, sep } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
-import type { ApplyResult, ChannelMap, ImportItem, WizardInfo } from '../shared/api.ts';
+import type { ApplyResult, ChannelMap, GenerateResult, ImportItem, WizardInfo } from '../shared/api.ts';
 import { backupDb } from './db/backup.ts';
 import { insertRow, updateRow } from './db/mutate.ts';
 import { uuidv7 } from './domain/ids.ts';
+import { generateStatement } from './payouts/generate.ts';
+import { htmlToPdf } from './payouts/pdfRender.ts';
+import { markPaid, payoutsView } from './payouts/store.ts';
 import { applyBulk, listBatches, planBulk, revertBatch } from './reports/bulk.ts';
 import { editLine, revertLine, splitLine } from './reports/edits.ts';
 import { lineFacets, lineHistory, queryLines } from './reports/lines.ts';
@@ -180,6 +184,36 @@ export function registerReportsIpc(handle: HandleFn, getWindow: () => BrowserWin
   handle('bulk:revert', ({ batchId }) => {
     const s = requireSession();
     return revertBatch(s.db, s.ctx, batchId);
+  });
+
+  // ------------------------------------------------ выплаты (этап 4)
+  handle('payouts:view', ({ quarter }) => payoutsView(requireSession().db, quarter));
+  handle('payouts:mark', ({ quarter, groupKey, status, paidKop, paidDate }) => {
+    const s = requireSession();
+    markPaid(s.db, s.ctx, quarter, groupKey, status, paidKop ?? null, paidDate ?? null);
+  });
+
+  handle('payouts:generate', async ({ quarter, groupKeys, city, date }): Promise<GenerateResult[]> => {
+    const s = requireSession();
+    const out: GenerateResult[] = [];
+    const calcNames = new Map(payoutsView(s.db, quarter).rows.map((r) => [r.key, r.payeeName]));
+    for (const key of groupKeys) {
+      try {
+        const g = await generateStatement(s.db, s.ctx, s.paths.output, quarter, key, { city: city ?? 'Санкт-Петербург', date: date ?? new Date().toISOString().slice(0, 10) }, htmlToPdf);
+        out.push({ groupKey: key, payee: g.payee, ok: true, versionNo: g.versionNo, folder: g.folder, xlsx: g.xlsx, pdf: g.pdf });
+      } catch (e) {
+        out.push({ groupKey: key, payee: calcNames.get(key) ?? key, ok: false, error: (e as Error).message });
+      }
+    }
+    return out;
+  });
+  handle('payouts:open', async ({ path }) => {
+    const s = requireSession();
+    const root = resolve(s.paths.output);
+    const abs = resolve(root, path);
+    if (abs !== root && !abs.startsWith(root + sep)) throw new Error('Файл вне папки данных');
+    const err = await shell.openPath(abs);
+    if (err) throw new Error(`Не удалось открыть файл: ${err}`);
   });
 
   // ------------------------------------------------ мастер незнакомого формата

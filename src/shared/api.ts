@@ -7,11 +7,14 @@ import type { ImportPreview } from '../main/reports/importer.ts';
 import type { CustomField, CustomMapping } from '../main/reports/custom.ts';
 import type { QuarterPanel, ReportListItem } from '../main/reports/queries.ts';
 import type { Flow, StreamKind } from '../main/reports/types.ts';
+import type { GroupCalc, Problem, QuarterCalc } from '../main/payouts/calc.ts';
+import type { PayoutRow, PayoutsView, StatementInfo } from '../main/payouts/store.ts';
 import type { VersionItem } from '../main/reports/replace.ts';
 import type { BatchItem, BulkAction, BulkPlan } from '../main/reports/bulk.ts';
 import type { UiField } from '../main/reports/edits.ts';
 import type { Facets, LineFilter, LineHistory, LinePage, LineRow, LineSort } from '../main/reports/lines.ts';
 
+export type { GroupCalc, Problem, QuarterCalc, PayoutRow, PayoutsView, StatementInfo };
 export type { LineHistory, VersionItem, BatchItem, BulkAction, BulkPlan, UiField, Facets, LineFilter, LinePage, LineRow, LineSort, StreamKind };
 export type { ImportPreview, CustomField, CustomMapping, QuarterPanel, ReportListItem, Flow };
 export type { Role, ArtistListItem, Dashboard, IssueView, PersonDetail, PersonListItem, TrackView, PlanSummary, Row };
@@ -64,6 +67,16 @@ export interface WizardInfo {
   mapping: CustomMapping;
   fieldTitles: Record<CustomField, string>;
 }
+export interface GenerateResult {
+  groupKey: string;
+  payee: string;
+  ok: boolean;
+  error?: string;
+  versionNo?: number;
+  folder?: string;
+  xlsx?: string;
+  pdf?: string;
+}
 export interface ApplyResult {
   id: string;
   fileName: string;
@@ -110,6 +123,10 @@ export interface ChannelMap {
   'bulk:apply': [{ filter: LineFilter; action: BulkAction }, { batchId: string; affected: number; deltaKop: number }];
   'bulk:list': [void, BatchItem[]];
   'bulk:revert': [{ batchId: string }, number];
+  'payouts:view': [{ quarter?: string }, PayoutsView];
+  'payouts:mark': [{ quarter: string; groupKey: string; status: 'draft' | 'ready' | 'paid'; paidKop?: number | null; paidDate?: string | null }, void];
+  'payouts:generate': [{ quarter: string; groupKeys: string[]; city?: string; date?: string }, GenerateResult[]];
+  'payouts:open': [{ path: string }, void];
   'tracks:search': [{ q: string }, TrackHit[]];
   'issues:linkTrack': [{ issueId: string; trackId: string }, { lines: number }];
   'issues:createTrack': [{ issueId: string }, { trackId: string }];
