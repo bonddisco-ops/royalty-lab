@@ -10,15 +10,17 @@ import { Artists } from './views/Artists.tsx';
 import { Issues } from './views/Issues.tsx';
 import { Reports } from './views/Reports.tsx';
 import { Lines } from './views/Lines.tsx';
+import { Tax } from './views/Tax.tsx';
 import { Payouts } from './views/Payouts.tsx';
 import { Contracts } from './views/Contracts.tsx';
 import { Logo } from './Logo.tsx';
+import { ErrorBoundary } from './ErrorBoundary.tsx';
 import { ContractViewerProvider } from './ContractViewer.tsx';
 import { NavContext, type NavParams, type Tab } from './nav.tsx';
 import { THEMES, applyTheme, savedTheme } from './themes.ts';
 import { Settings } from './views/Settings.tsx';
 
-const TABS: Array<[Tab, string]> = [['home', 'Главная'], ['tracks', 'Треки'], ['people', 'Люди'], ['artists', 'Артисты'], ['reports', 'Отчёты'], ['lines', 'Строки'], ['payouts', 'Выплаты'], ['contracts', 'Договоры'], ['issues', 'Проверить'], ['settings', 'Настройки']];
+const TABS: Array<[Tab, string]> = [['home', 'Главная'], ['tracks', 'Треки'], ['people', 'Люди'], ['artists', 'Артисты'], ['reports', 'Отчёты'], ['lines', 'Строки'], ['payouts', 'Выплаты'], ['contracts', 'Договоры'], ['issues', 'Проверить'], ['tax', 'Налоги'], ['settings', 'Настройки']];
 
 export function App() {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
@@ -63,7 +65,7 @@ export function App() {
         <div className="who">{auth.user?.login} · {auth.user?.role === 'owner' ? 'владелец' : 'бухгалтер'}</div>
         <button onClick={() => void call('auth:logout').then(setAuth)}>Заблокировать</button>
       </nav>
-      <main className="main">
+      <main className="main"><ErrorBoundary key={tab} label="Этот раздел не открылся">
         {tab === 'home' && <Home tick={tick} onChanged={refresh} goto={(t) => go(t as Tab)} />}
         {tab === 'tracks' && <Tracks onChanged={refresh} />}
         {tab === 'people' && <People onChanged={refresh} />}
@@ -73,8 +75,9 @@ export function App() {
         {tab === 'payouts' && <Payouts onChanged={refresh} />}
         {tab === 'contracts' && <Contracts onChanged={refresh} />}
         {tab === 'issues' && <Issues onChanged={refresh} />}
+        {tab === 'tax' && <Tax />}
         {tab === 'settings' && <Settings auth={auth} onChanged={refresh} />}
-      </main>
+      </ErrorBoundary></main>
     </div>
     </ContractViewerProvider>
     </NavContext.Provider>

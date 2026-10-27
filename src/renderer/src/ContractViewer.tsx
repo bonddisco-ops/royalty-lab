@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { AppendixDraft, ContractDetail, ContractListItem, ContractPreview, FieldDef } from '../../shared/api.ts';
 import { call } from './api.ts';
+import { ErrorBoundary } from './ErrorBoundary.tsx';
 import { useNav } from './nav.tsx';
 import { BlockView, ReadOnly } from './views/Contracts.tsx';
 
@@ -15,7 +16,7 @@ export function ContractViewerProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={open}>
       {children}
-      {st && <ContractViewer key={st.id} id={st.id} opts={st.opts} onClose={() => setSt(null)} />}
+      {st && <ErrorBoundary label="Договор не открылся" onReset={() => setSt(null)}><ContractViewer key={st.id} id={st.id} opts={st.opts} onClose={() => setSt(null)} /></ErrorBoundary>}
     </Ctx.Provider>
   );
 }
@@ -75,7 +76,7 @@ function ContractViewer({ id, opts, onClose }: { id: string; opts: ViewerOpts; o
     const names: Record<FieldDef['group'], string> = { money: 'Суммы и ставки', reports: 'Отчёты и выплаты', notice: 'Уведомления и сроки', other: 'Прочее' };
     return (Object.keys(names) as Array<FieldDef['group']>).map((g) => [names[g], fields.filter((f) => f.group === g)] as const).filter(([, fs]) => fs.length > 0);
   }, [fields]);
-  const mine = (t: AppendixDraft['tracks'][number]): boolean => (!!opts.trackId && t.trackId === opts.trackId) || (!!opts.artist && t.row.performers.toLowerCase().includes(opts.artist.toLowerCase()));
+  const mine = (t: AppendixDraft['tracks'][number]): boolean => (!!opts.trackId && t.trackId === opts.trackId) || (!!opts.artist && (t.row.performers ?? '').toLowerCase().includes(opts.artist.toLowerCase()));
 
   return (
     <div className="modal" style={{ zIndex: 30 }}><div className="dialog" style={{ width: 'min(1100px, 94vw)', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
@@ -135,7 +136,7 @@ function ContractViewer({ id, opts, onClose }: { id: string; opts: ViewerOpts; o
                       <thead><tr><th>№</th>{APP_COLS.map(([, l]) => <th key={l}>{l}</th>)}</tr></thead>
                       <tbody>{app.tracks.map((t, i) => (
                         <tr key={i} style={mine(t) ? { background: 'color-mix(in srgb, var(--accent) 18%, transparent)' } : undefined}>
-                          <td>{i + 1}</td>{APP_COLS.map(([k]) => <td key={k}>{t.row[k as keyof typeof t.row]}</td>)}
+                          <td>{i + 1}</td>{APP_COLS.map(([k]) => <td key={k}>{t.row[k as keyof typeof t.row] ?? ''}</td>)}
                         </tr>))}</tbody>
                     </table>
                   </div>

@@ -210,16 +210,30 @@ function parseJson<T>(s: unknown, fallback: T): T {
   try { return s ? (JSON.parse(String(s)) as T) : fallback; } catch { return fallback; }
 }
 
+/**
+ * Строка приложения для таблицы. Приложения, загруженные из стартовой базы, хранят «сырые» поля (title_raw, performers_raw, term_raw…) —
+ * их достраиваем по каталогу так же, как для нового приложения, а недостающие поля всегда заполняем пустыми строками.
+ */
+function normalizeTrackRow(db: Db, contractId: string, item: Row, appDate: string): TrackRow {
+  const p = parseJson<Record<string, unknown>>(item.payload_json, {});
+  if (typeof p.title === 'string' || typeof p.performers === 'string') return { ...emptyTrack(), ...(p as Partial<TrackRow>) };
+  let base: TrackRow = emptyTrack();
+  if (item.track_id) { try { base = { ...emptyTrack(), ...trackRow(db, contractId, String(item.track_id), appDate).row }; } catch { /* трека уже нет — оставляем сырые поля */ } }
+  const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+  return { ...base, title: base.title || str(p.title_raw), performers: base.performers || str(p.performers_raw), term: str(p.term_raw) || base.term };
+}
+
 export function draftAppendix(db: Db, contractId: string, appendixId: string | null): AppendixDraft {
   if (appendixId) {
     const a = db.prepare('SELECT * FROM appendix WHERE id = ? AND contract_id = ? AND deleted_at IS NULL').get(appendixId, contractId);
     if (!a) throw new Error('Приложение не найдено');
     const items = db.prepare('SELECT * FROM appendix_item WHERE appendix_id = ? AND deleted_at IS NULL ORDER BY created_at, id').all(appendixId);
+    const appDate: string = a.date ?? todayIso();
     return {
-      appendixId, no: Number(a.number), date: a.date ?? todayIso(),
-      tracks: items.filter((i) => i.kind === 'works').map((i) => ({ trackId: i.track_id ?? null, participationId: i.participation_id ?? null, row: parseJson<TrackRow>(i.payload_json, emptyTrack()) })),
-      videos: items.filter((i) => i.kind === 'video').map((i) => parseJson<VideoRow>(i.payload_json, emptyVideo())),
-      images: items.filter((i) => i.kind === 'images').map((i) => parseJson<ImageRow>(i.payload_json, emptyImage())),
+      appendixId, no: Number(a.number), date: appDate,
+      tracks: items.filter((i) => i.kind === 'works').map((i) => ({ trackId: i.track_id ?? null, participationId: i.participation_id ?? null, row: normalizeTrackRow(db, contractId, i, appDate) })),
+      videos: items.filter((i) => i.kind === 'video').map((i) => ({ ...emptyVideo(), ...parseJson<Partial<VideoRow>>(i.payload_json, {}) })),
+      images: items.filter((i) => i.kind === 'images').map((i) => ({ ...emptyImage(), ...parseJson<Partial<ImageRow>>(i.payload_json, {}) })),
     };
   }
   const no = Number(db.prepare('SELECT max(number) AS m FROM appendix WHERE contract_id = ? AND deleted_at IS NULL').get(contractId)?.m ?? 0) + 1;

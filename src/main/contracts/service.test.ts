@@ -140,3 +140,19 @@ test('удаление договора снимает привязку прил
   assert.equal(listContracts(db).length, 0);
   assert.equal(db.prepare('SELECT appendix_id FROM participation WHERE id = ?').get(part)!.appendix_id, null);
 });
+
+test('приложение из стартовой базы («сырые» поля) открывается с заполненными строками', () => {
+  const { db, cp, artist, track } = setup('sz');
+  insertRow(db, ctx, 'participation', { track_id: track, artist_id: artist, share_authors: '0.5', share_related: '0.5', label_rate: '0.7' });
+  const c = saveContract(db, ctx, edit(cp));
+  const app = insertRow(db, ctx, 'appendix', { contract_id: c, number: 1, date: '2026-07-31', status: 'draft' });
+  insertRow(db, ctx, 'appendix_item', { appendix_id: app, track_id: track, participation_id: null, kind: 'works', payload_json: JSON.stringify({ title_raw: 'Cold Heart', performers_raw: 'Tester', shares_raw: '50%', term_raw: '2025-2035', mode: 'x' }) });
+  insertRow(db, ctx, 'appendix_item', { appendix_id: app, track_id: null, participation_id: null, kind: 'works', payload_json: JSON.stringify({ title_raw: 'Без трека', performers_raw: 'Кто-то' }) });
+  const d = draftAppendix(db, c, app);
+  assert.equal(d.tracks.length, 2);
+  for (const t of d.tracks) for (const v of Object.values(t.row)) assert.equal(typeof v, 'string', 'ни одного undefined');
+  assert.equal(d.tracks[0]!.row.title, 'Cold Heart');
+  assert.equal(d.tracks[0]!.row.term, '2025-2035');
+  assert.equal(d.tracks[1]!.row.title, 'Без трека');
+  assert.equal(d.tracks[1]!.row.performers, 'Кто-то');
+});

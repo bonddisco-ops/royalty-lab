@@ -1,13 +1,14 @@
 // IPC импорта отчётов: выбор файлов пачкой, предпросмотр, мастер незнакомого формата, запись, действия «Проверить».
 import { dialog, shell, type BrowserWindow } from 'electron';
 import { resolve, sep } from 'node:path';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import type { ApplyResult, ChannelMap, GenerateResult, ImportItem, WizardInfo } from '../shared/api.ts';
 import { backupDb } from './db/backup.ts';
 import { insertRow, updateRow } from './db/mutate.ts';
 import { uuidv7 } from './domain/ids.ts';
 import { commitOpening, deleteOpening, listOpening, matchOpeningName, parseOpeningXlsx, updateOpening } from './payouts/opening.ts';
+import { addPayment, addReceipt, deletePayment, deleteReceipt, setParams, taxCsv, taxView } from './tax/store.ts';
 import { generateStatement } from './payouts/generate.ts';
 import { htmlToPdf } from './payouts/pdfRender.ts';
 import { deleteLatestStatement, markPaid, payoutQuarters, payoutsView } from './payouts/store.ts';
@@ -213,6 +214,21 @@ export function registerReportsIpc(handle: HandleFn, getWindow: () => BrowserWin
     const s = requireSession();
     backupDb(s.db, s.open.file, s.paths.backups, 'before-delete-statement');
     return deleteLatestStatement(s.db, s.ctx, s.paths.output, quarter, groupKey);
+  });
+  // ------------------------------------------------ налоги ИП (УСН 6%)
+  handle('tax:view', ({ year }) => taxView(requireSession().db, year));
+  handle('tax:addReceipt', (r) => { const s = requireSession(); return addReceipt(s.db, s.ctx, r); });
+  handle('tax:delReceipt', ({ id }) => { const s = requireSession(); deleteReceipt(s.db, s.ctx, id); });
+  handle('tax:addPayment', (p) => { const s = requireSession(); return addPayment(s.db, s.ctx, p); });
+  handle('tax:delPayment', ({ id }) => { const s = requireSession(); deletePayment(s.db, s.ctx, id); });
+  handle('tax:setParams', ({ year, params }) => { const s = requireSession(); setParams(s.db, s.ctx, year, params); });
+  handle('tax:export', ({ year }) => {
+    const s = requireSession();
+    const dir = resolve(s.paths.output, 'Налоги');
+    mkdirSync(dir, { recursive: true });
+    const name = `Налоги_${year}.csv`;
+    writeFileSync(resolve(dir, name), taxCsv(taxView(s.db, year)), 'utf8');
+    return `Налоги/${name}`;
   });
   handle('opening:pick', async () => {
     const s = requireSession();

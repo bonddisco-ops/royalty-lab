@@ -30,6 +30,8 @@ export const DATA_TABLES = [
   'payout_period',
   'payout_statement',
   'opening_balance',
+  'income_receipt',
+  'tax_payment',
 ] as const;
 export type DataTable = (typeof DATA_TABLES)[number];
 
@@ -364,6 +366,31 @@ CREATE TABLE opening_balance (
 CREATE INDEX ix_opening_quarter ON opening_balance(quarter);
 `;
 
+// M009: раздел «Налоги»: поступления денег лейблу (по дате получения, кассовый метод УСН) и платежи по налогу/взносам.
+const M009 = `
+CREATE TABLE income_receipt (
+  id TEXT PRIMARY KEY,
+  received_date TEXT NOT NULL,
+  amount_kop INTEGER NOT NULL,
+  source TEXT,
+  note TEXT,
+  ${STD}
+);
+CREATE INDEX ix_income_date ON income_receipt(received_date);
+
+CREATE TABLE tax_payment (
+  id TEXT PRIMARY KEY,
+  deduct_year INTEGER NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('fixed','extra','usn')),
+  period TEXT,
+  paid_date TEXT NOT NULL,
+  amount_kop INTEGER NOT NULL,
+  note TEXT,
+  ${STD}
+);
+CREATE INDEX ix_taxpay_year ON tax_payment(deduct_year);
+`;
+
 export const MIGRATIONS: Array<{ version: number; sql: string }> = [
   { version: 1, sql: M001 },
   { version: 2, sql: M002 },
@@ -373,6 +400,7 @@ export const MIGRATIONS: Array<{ version: number; sql: string }> = [
   { version: 6, sql: M006 },
   { version: 7, sql: M007 },
   { version: 8, sql: M008 },
+  { version: 9, sql: M009 },
 ];
 
 export function currentVersion(db: Db): number {

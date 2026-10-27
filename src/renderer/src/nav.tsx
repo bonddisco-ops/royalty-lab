@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react';
 
-export type Tab = 'home' | 'tracks' | 'people' | 'artists' | 'reports' | 'lines' | 'payouts' | 'contracts' | 'issues' | 'settings';
+export type Tab = 'home' | 'tracks' | 'people' | 'artists' | 'reports' | 'lines' | 'payouts' | 'contracts' | 'issues' | 'tax' | 'settings';
 /** Куда прыгнуть и что там открыть: одна механика для всех красных пометок. */
 export interface NavParams {
   personId?: string;
