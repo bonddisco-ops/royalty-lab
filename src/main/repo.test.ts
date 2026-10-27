@@ -132,3 +132,22 @@ test('автопроверка закрывает вопросы, причина
   repo.createArtist(db, c, { name: 'Новый Артист' });
   assert.equal(repo.revalidateIssues(db, c), 1);
 });
+
+test('треки: люди по долям — коллаб двух людей и несколько артистов одного человека', () => {
+  const db = freshDb();
+  const c = { userId: 'owner', replicaId: 'r1' };
+  const p1 = repo.createPerson(db, c, { last_name: 'Первый', first_name: 'Пётр' });
+  const p2 = repo.createPerson(db, c, { last_name: 'Второй', first_name: 'Семён' });
+  const a1 = repo.createArtist(db, c, { name: 'Alias One', counterparty_id: p1 });
+  const a2 = repo.createArtist(db, c, { name: 'Alias Two', counterparty_id: p1 });
+  const a3 = repo.createArtist(db, c, { name: 'Solo', counterparty_id: p2 });
+  const a4 = repo.createArtist(db, c, { name: 'Free' });
+  const t = repo.createTrack(db, c, { title: 'Collab' });
+  for (const [a, sa, sr] of [[a1, '0.25', '0.25'], [a2, '0.25', '0.25'], [a3, '0.25', '0.25'], [a4, '0.25', '0.25']] as const) insertRow(db, c, 'participation', { track_id: t, artist_id: a, share_authors: sa, share_related: sr, label_rate: '0.7' });
+  const v = repo.listTracks(db).find((x) => x.id === t)!;
+  assert.equal(v.people.length, 3);
+  const one = v.people.find((x) => x.personId === p1)!;
+  assert.deepEqual([one.artists.length, one.shareRelated], [2, '0.5']);
+  assert.ok(v.people.some((x) => x.personId === null && x.artists[0] === 'Free'));
+  assert.equal(v.participants.find((x) => x.artist === 'Solo')!.person, 'Второй Семён');
+});

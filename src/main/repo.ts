@@ -227,7 +227,12 @@ export interface ParticipantView {
   appendixId: string | null;
   notes: string | null;
   duplicate: boolean;
+  /** Кто реально получает деньги: явный получатель или человек, к которому привязан артист. */
+  personId: string | null;
+  person: string | null;
 }
+
+export interface TrackPerson { personId: string | null; name: string; artists: string[]; shareAuthors: string; shareRelated: string }
 
 export interface TrackView {
   id: string;
@@ -236,6 +241,8 @@ export interface TrackView {
   cover: string | null;
   codes: string[];
   participants: ParticipantView[];
+  /** Доли по людям: несколько артистов одного человека сложены вместе. */
+  people: TrackPerson[];
   sumAuthors: string;
   sumRelated: string;
   shareSumBad: boolean;
@@ -254,6 +261,10 @@ export function listTracks(db: Db, q = '', onlyProblems = false): TrackView[] {
        LEFT JOIN counterparty pc ON pc.id = p.payee_counterparty_id
       WHERE p.deleted_at IS NULL ORDER BY a.name`,
   ).all();
+  const persons = new Map<string, string>();
+  for (const c of db.prepare('SELECT id, last_name, first_name, middle_name FROM counterparty WHERE deleted_at IS NULL').all()) persons.set(c.id, personDisplay(c));
+  const artistPerson = new Map<string, string | null>();
+  for (const a of db.prepare('SELECT id, counterparty_id FROM artist WHERE deleted_at IS NULL').all()) artistPerson.set(a.id, a.counterparty_id ?? null);
   const out: TrackView[] = [];
   for (const t of tracks) {
     const ps = parts.filter((p) => p.track_id === t.id);
@@ -274,7 +285,21 @@ export function listTracks(db: Db, q = '', onlyProblems = false): TrackView[] {
         payee: p.payee_counterparty_id ? [p.payee_last, p.payee_first].filter(Boolean).join(' ') : null,
         contract: p.contract_number, contractId: p.contract_id, appendixId: p.appendix_id, notes: p.notes,
         duplicate: (seen.get(`${p.artist_id}|${p.payee_counterparty_id ?? ''}`) ?? 0) > 1,
+        personId: p.payee_counterparty_id ?? artistPerson.get(p.artist_id) ?? null,
+        person: ((): string | null => { const pid = p.payee_counterparty_id ?? artistPerson.get(p.artist_id) ?? null; return pid ? persons.get(pid) ?? null : null; })(),
       })),
+      people: ((): TrackPerson[] => {
+        const g = new Map<string, { personId: string | null; artists: string[]; sa: string[]; sr: string[] }>();
+        for (const p of ps) {
+          const pid: string | null = p.payee_counterparty_id ?? artistPerson.get(p.artist_id) ?? null;
+          const k = pid ?? `a:${p.artist_id}`;
+          const e = g.get(k) ?? { personId: pid, artists: [], sa: [], sr: [] };
+          if (!e.artists.includes(p.artist_name)) e.artists.push(p.artist_name);
+          e.sa.push(p.share_authors); e.sr.push(p.share_related);
+          g.set(k, e);
+        }
+        return [...g.values()].map((e) => ({ personId: e.personId, name: e.personId ? persons.get(e.personId) ?? '' : '', artists: e.artists, shareAuthors: formatDec(sumDec(e.sa)), shareRelated: formatDec(sumDec(e.sr)) }));
+      })(),
       sumAuthors: formatDec(sa), sumRelated: formatDec(sr),
       shareSumBad: ps.length > 0 && (!isWholeShare(sa) || !isWholeShare(sr)),
       hasDuplicates: [...seen.values()].some((n) => n > 1),

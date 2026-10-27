@@ -10,6 +10,7 @@ import { useSort } from '../sort.tsx';
 import { pctInput, shareToPct } from '../util.ts';
 
 function Participant({ p, trackId, bad, reload }: { p: TrackView['participants'][number]; trackId: string; bad: boolean; reload: () => void }) {
+  const nav = useNav();
   const [a, setA] = useState(shareToPct(p.shareAuthors));
   const [r, setR] = useState(shareToPct(p.shareRelated));
   const [rate, setRate] = useState(shareToPct(p.labelRate));
@@ -19,7 +20,7 @@ function Participant({ p, trackId, bad, reload }: { p: TrackView['participants']
   return (
     <>
       <div className="part">
-        <div>{p.artist}{p.duplicate && <span className="badge bad">дубль</span>}<div className="dim" style={{ fontSize: 12 }}>{p.contractId ? <ContractLink id={p.contractId} opts={{ trackId, artist: p.artist }}>{p.contract}</ContractLink> : (p.contract ?? 'нет договора')}{p.payee ? ` · получатель: ${p.payee}` : ''}</div></div>
+        <div>{p.artist}{p.person ? <span className="dim"> → {p.person}</span> : <button className="badge bad" style={{ marginLeft: 6 }} title="Привязать артиста к человеку" onClick={() => nav.go('artists', { query: p.artist })}>нет человека</button>}{p.duplicate && <span className="badge bad">дубль</span>}<div className="dim" style={{ fontSize: 12 }}>{p.contractId ? <ContractLink id={p.contractId} opts={{ trackId, artist: p.artist }}>{p.contract}</ContractLink> : (p.contract ?? 'нет договора')}{p.payee ? ` · получатель: ${p.payee}` : ''}</div></div>
         <input value={a} onChange={(e) => setA(e.target.value)} title="Авторские, %" />
         <input value={r} onChange={(e) => setR(e.target.value)} title="Смежные, %" />
         <input value={rate} onChange={(e) => setRate(e.target.value)} title="Ставка лейбла, %" placeholder="ставка" />
@@ -49,11 +50,12 @@ function TrackRow({ t, artists, reload, startOpen }: { t: TrackView; artists: Ar
         <td><div className="nameCell"><Avatar square file={t.cover} />{t.title}</div></td>
         <td className="mono">{t.isrc ?? <span className="dim">{t.codes.join(', ') || '—'}</span>}</td>
         <td>{t.participants.map((p) => p.artist).join(', ')}</td>
+        <td>{t.people.map((pp, i) => <div key={i} style={{ whiteSpace: 'nowrap' }}>{pp.name || <span className="badge bad">нет человека: {pp.artists.join(', ')}</span>}<span className="dim"> · {shareToPct(pp.shareAuthors)}% / {shareToPct(pp.shareRelated)}%{pp.artists.length > 1 ? ` (${pp.artists.length} артиста)` : ''}</span></div>)}</td>
         <td className={t.shareSumBad ? 'sum bad' : 'dim'}>{shareToPct(t.sumAuthors)}% / {shareToPct(t.sumRelated)}%</td>
         <td>{t.hasDuplicates && <span className="badge bad">дубли</span>}</td>
       </tr>
       {open && (
-        <tr><td colSpan={5} style={{ background: 'var(--panel)' }}>
+        <tr><td colSpan={6} style={{ background: 'var(--panel)' }}>
           <div className="row" style={{ marginBottom: 8 }}><Avatar big square file={t.cover} onClick={() => setCover(true)} title="Обложка: заменить, убрать, сохранить в файл" /><span className="dim">Обложка трека (в Excel и PDF не попадает)</span></div>
           {cover && <PhotoEditor table="track" id={t.id} file={t.cover} title={t.title} onClose={(ch) => { setCover(false); if (ch) reload(); }} />}
           <div className="part dim" style={{ fontSize: 12 }}><div>Участник</div><div>Автор., %</div><div>Смеж., %</div><div>Ставка, %</div><div /><div /></div>
@@ -110,7 +112,7 @@ export function Tracks({ onChanged }: { onChanged: () => void }) {
         </div>
       )}
       <table>
-        <thead><tr>{th('title', 'Название')}{th('isrc', 'ISRC / коды')}{th('artists', 'Артисты')}{th('shares', 'Сумма долей (авт. / смеж.)')}{th('bad', 'Проблемы')}</tr></thead>
+        <thead><tr>{th('title', 'Название')}{th('isrc', 'ISRC / коды')}{th('artists', 'Артисты')}<th>Люди (доли авт. / смеж.)</th>{th('shares', 'Сумма долей (авт. / смеж.)')}{th('bad', 'Проблемы')}</tr></thead>
         <tbody>{sorted.map((t) => <TrackRow key={t.id} t={t} artists={artists} reload={reload} startOpen={t.id === focusId} />)}</tbody>
       </table>
     </>
