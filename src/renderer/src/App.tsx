@@ -12,6 +12,7 @@ import { Reports } from './views/Reports.tsx';
 import { Lines } from './views/Lines.tsx';
 import { Payouts } from './views/Payouts.tsx';
 import { Contracts } from './views/Contracts.tsx';
+import { Logo } from './Logo.tsx';
 import { Settings } from './views/Settings.tsx';
 
 type Tab = 'home' | 'tracks' | 'people' | 'artists' | 'reports' | 'lines' | 'payouts' | 'contracts' | 'issues' | 'settings';
@@ -41,7 +42,7 @@ export function App() {
   return (
     <div className="shell">
       <nav className="side">
-        <div className="brand">Royalty Lab</div>
+        <div className="brand"><Logo size={26} color="#5f5c60" /><span>Royalty Lab</span></div>
         {TABS.map(([id, label]) => (
           <button key={id} className={'nav' + (tab === id ? ' on' : '')} onClick={() => setTab(id)}>
             <span>{label}</span>

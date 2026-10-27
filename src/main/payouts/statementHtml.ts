@@ -59,7 +59,7 @@ export function statementHtml(d: StatementData): string {
 html, body { width: 841.9pt; height: 595.3pt }
 body { font-family: 'Bahnschrift Condensed', 'Bahnschrift', 'Avenir Next Condensed', 'Arial Narrow', 'Helvetica Neue', Arial, sans-serif; font-stretch: condensed; font-size: 10pt; color: #000; position: relative; overflow: hidden }
 .abs { position: absolute }
-.logo { left: 52pt; top: 68pt; width: 207pt }
+.logo { left: 70pt; top: 58pt; height: 88pt }
 h1 { font-size: 15pt; font-weight: 700; text-decoration: underline; text-align: center }
 .sub { font-size: 12pt; text-align: center }
 table { border-collapse: collapse }
