@@ -134,6 +134,7 @@ export interface ChannelMap {
   'payouts:mark': [{ quarter: string; groupKey: string; status: 'draft' | 'ready' | 'paid'; paidKop?: number | null; paidDate?: string | null }, void];
   'payouts:generate': [{ quarter: string; groupKeys: string[]; city?: string; date?: string; round?: 'down' | 'up' | 'nearest' }, GenerateResult[]];
   'payouts:deleteStatement': [{ quarter: string; groupKey: string }, { versionNo: number; files: number }];
+  'app:refocus': [void, void];
   'opening:pick': [void, OpeningPreview | null];
   'opening:commit': [{ quarter: string; items: OpeningItem[] }, { saved: number; replaced: number; totalKop: number }];
   'opening:list': [void, OpeningListItem[]];

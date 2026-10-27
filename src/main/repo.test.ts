@@ -5,6 +5,7 @@ import { sampleSheets } from '../test/sampleStarter.ts';
 import { ensureDefaultSettings } from './db/init.ts';
 import { buildStarterPlan } from './seed/starterPlan.ts';
 import { writeStarterPlan } from './seed/starterWrite.ts';
+import { insertRow, updateRow } from './db/mutate.ts';
 import * as repo from './repo.ts';
 
 const ctx = { userId: 'owner', replicaId: 'r1' };
@@ -111,4 +112,23 @@ test('новый человек: вопрос «нет договора»; ар�
   assert.notEqual(addArtistToPerson(db, c, p2, { name: 'New One' }), a);
   closeNoContractIssue(db, c, p1);
   assert.equal(db.prepare("SELECT count(*) n FROM issue WHERE kind = 'no_contract' AND status = 'open'").get()!.n, 1);
+});
+
+test('автопроверка закрывает вопросы, причина которых устранена', () => {
+  const db = freshDb();
+  const c = { userId: 'owner', replicaId: 'r1' };
+  const p = repo.createPerson(db, c, { last_name: 'Тестов', first_name: 'Тест' });
+  assert.equal(repo.listIssues(db, 'open').filter((i) => i.kind === 'no_contract').length, 1);
+  assert.equal(repo.revalidateIssues(db, c), 0, 'пока договора нет — вопрос остаётся');
+  insertRow(db, c, 'contract', { counterparty_id: p, number: 'Т-1' });
+  assert.equal(repo.revalidateIssues(db, c), 1);
+  assert.equal(repo.listIssues(db, 'open').length, 0);
+  insertRow(db, c, 'issue', { kind: 'missing_pii', entity_type: 'counterparty', entity_id: p, details_json: { field: 'inn' }, status: 'open' });
+  assert.equal(repo.revalidateIssues(db, c), 0);
+  updateRow(db, c, 'counterparty', p, { inn: '504407626681' });
+  assert.equal(repo.revalidateIssues(db, c), 1);
+  insertRow(db, c, 'issue', { kind: 'unknown_artist', details_json: { artist: 'Новый Артист' }, status: 'open' });
+  assert.equal(repo.revalidateIssues(db, c), 0);
+  repo.createArtist(db, c, { name: 'Новый Артист' });
+  assert.equal(repo.revalidateIssues(db, c), 1);
 });

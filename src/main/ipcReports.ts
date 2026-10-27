@@ -143,8 +143,8 @@ export function registerReportsIpc(handle: HandleFn, getWindow: () => BrowserWin
     return out;
   });
 
-  handle('reports:list', ({ quarter }) => listReports(requireSession().db, quarter));
-  handle('reports:panel', ({ quarter }) => quarterPanel(requireSession().db, quarter));
+  handle('reports:list', ({ quarter }) => { const s = requireSession(); repo.revalidateIssues(s.db, s.ctx); return listReports(s.db, quarter); });
+  handle('reports:panel', ({ quarter }) => { const s = requireSession(); repo.revalidateIssues(s.db, s.ctx); return quarterPanel(s.db, quarter); });
   handle('reports:setFlow', ({ reportId, flow }) => {
     const s = requireSession();
     setReportFlow(s.db, s.ctx, reportId, flow);

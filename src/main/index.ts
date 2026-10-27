@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
 import { join } from 'node:path';
 import { registerIpc } from './ipc.ts';
 import { endSession, setLockListener } from './session.ts';
@@ -6,6 +6,17 @@ import { endSession, setLockListener } from './session.ts';
 const profileDir = process.env.ROYALTY_LAB_DATA ?? join(app.getPath('appData'), 'RoyaltyLab');
 let shutdown: () => void = () => {};
 let win: BrowserWindow | null = null;
+
+/** После системных окон (выбор файла, «Подтвердить») Electron теряет клавиатурный фокус страницы: в полях нельзя печатать. Возвращаем фокус. */
+export function refocusWindow(): void {
+  if (!win || win.isDestroyed()) return;
+  win.focus();
+  win.webContents.focus();
+}
+for (const m of ['showOpenDialog', 'showSaveDialog', 'showMessageBox'] as const) {
+  const orig = (dialog[m] as (...a: unknown[]) => Promise<unknown>).bind(dialog);
+  (dialog as unknown as Record<string, unknown>)[m] = async (...a: unknown[]) => { try { return await orig(...a); } finally { refocusWindow(); setTimeout(refocusWindow, 80); } };
+}
 
 function createWindow(): void {
   win = new BrowserWindow({
@@ -40,7 +51,7 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
   app.whenReady().then(() => {
-    shutdown = registerIpc(profileDir, () => win, () => app.quit()).shutdown;
+    shutdown = registerIpc(profileDir, () => win, () => app.quit(), refocusWindow).shutdown;
     setLockListener(() => win?.webContents.send('locked'));
     createWindow();
     app.on('activate', () => {

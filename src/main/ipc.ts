@@ -28,7 +28,7 @@ const pending = new Map<string, { plan: StarterPlan; fileName: string }>();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const PHOTO_COLUMN: Record<PhotoTable, string> = { counterparty: 'photo_file', artist: 'photo_file', track: 'cover_file' };
 
-export function registerIpc(profileDir: string, getWindow: () => BrowserWindow | null, quit: () => void): { shutdown: () => void } {
+export function registerIpc(profileDir: string, getWindow: () => BrowserWindow | null, quit: () => void, refocus: () => void = () => {}): { shutdown: () => void } {
   const cfgFile = join(profileDir, 'config.json');
   let paths: DataPaths | null = null;
   let state: DataState = 'setup';
@@ -230,7 +230,7 @@ export function registerIpc(profileDir: string, getWindow: () => BrowserWindow |
   });
 
   // ---------------------------------------------------------------- каталог
-  handle('dash:get', () => repo.dashboard(db()));
+  handle('dash:get', () => { const s = requireSession(); repo.revalidateIssues(s.db, s.ctx); return repo.dashboard(s.db); });
   handle('people:list', ({ q }) => repo.listPeople(db(), q));
   handle('people:get', ({ id, reveal }) => repo.getPerson(db(), id, !!reveal));
   handle('people:create', (data) => repo.createPerson(db(), ctx(), data));
@@ -247,7 +247,7 @@ export function registerIpc(profileDir: string, getWindow: () => BrowserWindow |
   handle('parts:update', ({ id, patch }) => repo.updateParticipation(db(), ctx(), id, patch));
   handle('parts:remove', ({ id }) => repo.removeParticipation(db(), ctx(), id));
   handle('parts:fix', ({ trackId, participationId }) => repo.fixShares(db(), ctx(), trackId, participationId));
-  handle('issues:list', ({ status: st, kind, reportVersionId }) => repo.listIssues(db(), st ?? 'open', kind, reportVersionId));
+  handle('issues:list', ({ status: st, kind, reportVersionId }) => { const s = requireSession(); repo.revalidateIssues(s.db, s.ctx); return repo.listIssues(s.db, st ?? 'open', kind, reportVersionId); });
   handle('issues:resolve', ({ id, status: st, note }) => repo.resolveIssue(db(), ctx(), id, st, note));
   handle('history:get', ({ table, id }) => repo.history(db(), table, id));
   handle('settings:get', () => repo.getSettings(db()));
@@ -256,6 +256,7 @@ export function registerIpc(profileDir: string, getWindow: () => BrowserWindow |
     if (id === 'auto_lock_minutes') reschedule();
   });
 
+  handle('app:refocus', () => { refocus(); });
   registerReportsIpc(handle, getWindow);
   registerContractsIpc(handle);
   registerSyncIpc(handle, getWindow);

@@ -397,6 +397,68 @@ export interface IssueView {
   reportVersionId: string | null;
 }
 
+/**
+ * Автопроверка открытых вопросов: если причина уже устранена (заполнили поле, создали договор, привязали артиста, поправили доли),
+ * вопрос закрывается сам. Вызывается при открытии «Проверить» и при подсчёте красных значков.
+ */
+export function revalidateIssues(db: Db, ctx: Ctx): number {
+  const open = db.prepare("SELECT * FROM issue WHERE deleted_at IS NULL AND status = 'open'").all();
+  if (open.length === 0) return 0;
+  const FIELD_COL: Record<string, string> = { 'дата рождения': 'birth_date', 'паспорт': 'passport_number', 'адрес': 'addr_raw', 'ИНН': 'inn', 'р/с': 'bank_account', 'БИК': 'bank_bik' };
+  const hasLine = db.prepare("SELECT 1 FROM statement_line l JOIN report_version v ON v.id = l.report_version_id WHERE l.track_id IS NULL AND v.status = 'active' AND v.deleted_at IS NULL AND l.report_version_id = ? AND (CASE WHEN ? <> '' THEN l.isrc_raw = ? WHEN ? <> '' THEN ifnull(l.code_raw, '') = ? ELSE 1 END) LIMIT 1");
+  let closed = 0;
+  const close = (id: string, why: string): void => {
+    updateRow(db, ctx, 'issue', id, { status: 'resolved', resolved_by: ctx.userId, resolved_at: new Date().toISOString(), resolution_json: { auto: why } });
+    closed++;
+  };
+  db.transaction(() => {
+    for (const i of open) {
+      const d: Row = i.details_json ? (typeof i.details_json === 'string' ? JSON.parse(i.details_json) : i.details_json) : {};
+      switch (i.kind) {
+        case 'missing_pii': {
+          const c = i.entity_id ? db.prepare('SELECT * FROM counterparty WHERE id = ? AND deleted_at IS NULL').get(i.entity_id) : undefined;
+          if (i.entity_id && !c) { close(i.id, 'человека больше нет'); break; }
+          const col = d.field === 'status' ? 'status' : FIELD_COL[String(d.field)] ?? (typeof d.field === 'string' && /^[a-z_]+$/.test(d.field) ? d.field : null);
+          if (c && col && col in c) {
+            const v = c[col];
+            if (col === 'status' ? v && v !== 'unknown' : v !== null && v !== undefined && String(v).trim() !== '') close(i.id, 'поле заполнено');
+          }
+          break;
+        }
+        case 'no_contract': {
+          if (i.entity_type !== 'counterparty' || !i.entity_id) break;
+          const alive = db.prepare('SELECT 1 FROM counterparty WHERE id = ? AND deleted_at IS NULL').get(i.entity_id);
+          const has = db.prepare('SELECT 1 FROM contract WHERE counterparty_id = ? AND deleted_at IS NULL').get(i.entity_id);
+          if (!alive || has) close(i.id, 'договор есть');
+          break;
+        }
+        case 'unknown_artist': {
+          const n = normKey(String(d.artist ?? ''));
+          if (n && db.prepare('SELECT 1 FROM artist_name_variant v JOIN artist a ON a.id = v.artist_id WHERE v.variant_norm = ? AND v.deleted_at IS NULL AND a.deleted_at IS NULL').get(n)) close(i.id, 'артист заведён');
+          break;
+        }
+        case 'unmatched_track': {
+          if (!i.report_version_id) break;
+          const isrc = String(d.isrc ?? ''), code = isrc ? '' : String(d.code ?? '');
+          if (!isrc && !code) break; // без кода сопоставление по названию — только вручную
+          if (!hasLine.get(i.report_version_id, isrc, isrc, code, code)) close(i.id, 'все строки привязаны к трекам');
+          break;
+        }
+        case 'new_track': {
+          if (!i.entity_id) break;
+          const t = db.prepare('SELECT 1 FROM track WHERE id = ? AND deleted_at IS NULL').get(i.entity_id);
+          if (!t) { close(i.id, 'трека больше нет'); break; }
+          const ps = db.prepare('SELECT share_authors, share_related, label_rate FROM participation WHERE track_id = ? AND deleted_at IS NULL').all(i.entity_id);
+          if (ps.length > 0 && ps.every((p) => p.label_rate !== null && p.label_rate !== '') && isWholeShare(sumDec(ps.map((p) => p.share_authors))) && isWholeShare(sumDec(ps.map((p) => p.share_related)))) close(i.id, 'доли и ставки заполнены');
+          break;
+        }
+        default: break;
+      }
+    }
+  })();
+  return closed;
+}
+
 export function listIssues(db: Db, status: 'open' | 'resolved' | 'ignored' = 'open', kind?: string, reportVersionId?: string): IssueView[] {
   const rows = db.prepare(`SELECT * FROM issue WHERE deleted_at IS NULL AND status = ? ${kind ? 'AND kind = ?' : ''} ${reportVersionId ? 'AND report_version_id = ?' : ''} ORDER BY kind, created_at`).all(...[status, ...(kind ? [kind] : []), ...(reportVersionId ? [reportVersionId] : [])]);
   return rows.map((r) => {
