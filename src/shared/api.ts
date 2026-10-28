@@ -198,7 +198,7 @@ export interface ChannelMap {
   'tracks:list': [{ q?: string; onlyProblems?: boolean }, TrackView[]];
   'tracks:quickAdd': [{ title: string; artistName: string; isrc?: string | null; shareAuthors?: string | null; shareRelated?: string | null; labelRate?: string | null }, { trackId: string; artistId: string; artistCreated: boolean; personId: string | null; person: string | null }];
   'tracks:create': [{ title: string; isrc?: string | null }, string];
-  'tracks:update': [{ id: string; patch: { title?: string; isrc?: string | null; version?: string | null; notes?: string | null } }, void];
+  'tracks:update': [{ id: string; patch: { title?: string; isrc?: string | null; version?: string | null; notes?: string | null } }, number];
   'parts:add': [{ trackId: string; artistId: string; shareAuthors: string; shareRelated: string; labelRate: string | null; payeeCounterpartyId?: string | null }, string];
   'parts:update': [{ id: string; patch: Row }, void];
   'parts:remove': [{ id: string }, void];

@@ -169,3 +169,22 @@ test('быстрое внесение трека: известный артис�
   const t = listTracksQ(db).find((x) => x.id === r2.trackId)!;
   assert.equal(t.participants[0]!.shareAuthors, '1');
 });
+
+test('смена ISRC: связи остаются, старый код сохраняется, строки без трека подхватываются, чужой ISRC нельзя', () => {
+  const db = freshDb();
+  const c = { userId: 'owner', replicaId: 'r1' };
+  const t1 = repo.createTrack(db, c, { title: 'Один', isrc: 'RUA1D2500001' });
+  const t2 = repo.createTrack(db, c, { title: 'Два', isrc: 'RUA1D2500002' });
+  const art = repo.createArtist(db, c, { name: 'Артист' });
+  repo.addParticipation(db, c, { trackId: t1, artistId: art, shareAuthors: '1', shareRelated: '1', labelRate: null });
+  assert.throws(() => repo.updateTrack(db, c, t1, { isrc: 'RUA1D2500002' }), /уже закреплён за треком «Два»/);
+  assert.throws(() => repo.updateTrack(db, c, t1, { isrc: 'ABC' }), /ISRC должен быть/);
+  assert.equal(repo.updateTrack(db, c, t1, { isrc: 'rua1d2599999' }), 0);
+  const tr = repo.listTracks(db).find((x) => x.id === t1)!;
+  assert.equal(tr.isrc, 'RUA1D2599999');
+  assert.equal(tr.participants.length, 1);
+  const idents = db.prepare("SELECT value_norm FROM track_identifier WHERE track_id = ? AND kind = 'isrc' AND deleted_at IS NULL").all(t1).map((r) => r.value_norm).sort();
+  assert.deepEqual(idents, ['RUA1D2500001', 'RUA1D2599999']);
+  repo.updateTrack(db, c, t1, { isrc: null });
+  assert.equal(repo.listTracks(db).find((x) => x.id === t1)!.isrc, null);
+});

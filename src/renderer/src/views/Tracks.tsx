@@ -40,6 +40,16 @@ function TrackRow({ t, artists, reload, startOpen }: { t: TrackView; artists: Ar
   const [add, setAdd] = useState('');
   const [err, setErr] = useState('');
   const [cover, setCover] = useState(false);
+  const [isrcText, setIsrcText] = useState(t.isrc ?? '');
+  const [isrcMsg, setIsrcMsg] = useState('');
+  const saveIsrc = async () => {
+    setErr(''); setIsrcMsg('');
+    try {
+      const n = await call('tracks:update', { id: t.id, patch: { isrc: isrcText.trim() || null } });
+      setIsrcMsg(n > 0 ? `ISRC изменён, к треку подхвачено строк отчётов: ${n}` : 'ISRC изменён. Артисты, доли, договор и прошлые отчёты остались привязаны к треку');
+      reload();
+    } catch (e) { setErr((e as Error).message); }
+  };
   const addPart = async () => {
     setErr('');
     try { await call('parts:add', { trackId: t.id, artistId: add, shareAuthors: '0', shareRelated: '0', labelRate: null }); setAdd(''); reload(); } catch (e) { setErr((e as Error).message); }
@@ -58,6 +68,12 @@ function TrackRow({ t, artists, reload, startOpen }: { t: TrackView; artists: Ar
         <tr><td colSpan={6} style={{ background: 'var(--panel)' }}>
           <div className="row" style={{ marginBottom: 8 }}><Avatar big square file={t.cover} onClick={() => setCover(true)} title="Обложка: заменить, убрать, сохранить в файл" /><span className="dim">Обложка трека (в Excel и PDF не попадает)</span></div>
           {cover && <PhotoEditor table="track" id={t.id} file={t.cover} title={t.title} onClose={(ch) => { setCover(false); if (ch) reload(); }} />}
+          <div className="row" style={{ marginBottom: 8, alignItems: 'flex-end' }} onClick={(e) => e.stopPropagation()}>
+            <label className="f" style={{ width: 240 }}>ISRC<input className="mono" value={isrcText} onChange={(e) => { setIsrcText(e.target.value); setIsrcMsg(''); }} onKeyDown={(e) => { if (e.key === 'Enter') void saveIsrc(); }} placeholder="RUA1D2588339" /></label>
+            {isrcText.trim().toUpperCase().replace(/[\s-]+/g, '') !== (t.isrc ?? '') && <button className="primary" onClick={() => void saveIsrc()}>Сохранить ISRC</button>}
+            {t.codes.length > 0 && <span className="dim" style={{ fontSize: 12 }}>коды дистрибьюторов: {t.codes.join(', ')}</span>}
+          </div>
+          {isrcMsg && <div className="okmsg" style={{ marginBottom: 8 }}>{isrcMsg}</div>}
           <div className="part dim" style={{ fontSize: 12 }}><div>Участник</div><div>Автор., %</div><div>Смеж., %</div><div>Ставка, %</div><div /><div /></div>
           {t.participants.map((p) => <Participant key={p.id + p.shareAuthors + p.shareRelated + p.labelRate} p={p} trackId={t.id} bad={t.shareSumBad} reload={reload} />)}
           <div className="row" style={{ marginTop: 8 }}>

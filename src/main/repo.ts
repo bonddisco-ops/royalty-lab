@@ -1,6 +1,6 @@
 // Доступ к каталогу для карточек: чтение с вычислением флагов, запись только через mutate().
 import { formatDec, isWholeShare, parseDec, sumDec, DEC_ONE } from './domain/dec.ts';
-import { cleanText, normIsrc, normKey } from './domain/normalize.ts';
+import { cleanText, isIsrc, normIsrc, normKey } from './domain/normalize.ts';
 import { checkPerson, completeness, maskValue, PII_FIELDS, type PersonCheck } from './domain/validate.ts';
 import { insertRow, mutate, updateRow, deleteRow } from './db/mutate.ts';
 import type { Ctx, Db, Row } from './db/types.ts';
@@ -353,26 +353,46 @@ export function quickAddTrack(db: Db, ctx: Ctx, d: QuickTrackInput): QuickTrackR
   })());
 }
 
-export function updateTrack(db: Db, ctx: Ctx, id: string, patch: { title?: string; isrc?: string | null; version?: string | null; notes?: string | null }): void {
-  friendly(() => {
-    db.transaction(() => {
-      const p: Row = {};
-      if (patch.title !== undefined) {
-        p.title = cleanText(patch.title);
-        if (!p.title) throw new Error('Название не может быть пустым');
-      }
-      if (patch.version !== undefined) p.version = emptyToNull(patch.version);
-      if (patch.notes !== undefined) p.notes = emptyToNull(patch.notes);
-      if (patch.isrc !== undefined) {
-        const isrc = patch.isrc ? normIsrc(patch.isrc) : null;
+/** Возвращает, сколько строк отчётов без трека подхватилось по новому ISRC. */
+export function updateTrack(db: Db, ctx: Ctx, id: string, patch: { title?: string; isrc?: string | null; version?: string | null; notes?: string | null }): number {
+  return friendly(() => db.transaction(() => {
+    const p: Row = {};
+    let relinked = 0;
+    if (patch.title !== undefined) {
+      p.title = cleanText(patch.title);
+      if (!p.title) throw new Error('Название не может быть пустым');
+    }
+    if (patch.version !== undefined) p.version = emptyToNull(patch.version);
+    if (patch.notes !== undefined) p.notes = emptyToNull(patch.notes);
+    if (patch.isrc !== undefined) {
+      const cur = db.prepare('SELECT isrc FROM track WHERE id = ? AND deleted_at IS NULL').get(id);
+      if (!cur) throw new Error('Трек не найден');
+      const isrc = patch.isrc ? normIsrc(patch.isrc) : null;
+      if (isrc && !isIsrc(isrc)) throw new Error('ISRC должен быть вида RUA1D2588339 (2 буквы страны, 3 символа владельца, 2 цифры года, 5 цифр)');
+      if (isrc !== (cur.isrc ?? null)) {
+        if (isrc) {
+          const other = db.prepare(
+            `SELECT t.title FROM track t WHERE t.deleted_at IS NULL AND t.id <> ? AND (t.isrc = ? OR EXISTS (SELECT 1 FROM track_identifier i WHERE i.track_id = t.id AND i.kind = 'isrc' AND i.value_norm = ? AND i.deleted_at IS NULL))`,
+          ).get(id, isrc, isrc);
+          if (other) throw new Error(`Этот ISRC уже закреплён за треком «${other.title}»`);
+        }
+        // старый ISRC остаётся в «кодах» трека: прошлые отчёты и повторная загрузка старых файлов по-прежнему узнают этот трек
+        const hasIdent = (v: string): boolean => !!db.prepare("SELECT 1 FROM track_identifier WHERE track_id = ? AND kind = 'isrc' AND value_norm = ? AND deleted_at IS NULL").get(id, v);
+        if (cur.isrc && !hasIdent(cur.isrc)) insertRow(db, ctx, 'track_identifier', { track_id: id, kind: 'isrc', value_norm: cur.isrc });
         p.isrc = isrc;
-        if (isrc && !db.prepare("SELECT 1 FROM track_identifier WHERE kind = 'isrc' AND value_norm = ? AND deleted_at IS NULL").get(isrc)) {
-          insertRow(db, ctx, 'track_identifier', { track_id: id, kind: 'isrc', value_norm: isrc });
+        if (isrc) {
+          if (!hasIdent(isrc)) insertRow(db, ctx, 'track_identifier', { track_id: id, kind: 'isrc', value_norm: isrc });
+          // строки отчётов с новым ISRC, которые раньше не нашли трек, привязываем сейчас
+          const upd = db.prepare('UPDATE statement_line SET track_id = ? WHERE id = ?');
+          for (const l of db.prepare("SELECT l.id, l.isrc_raw FROM statement_line l JOIN report_version v ON v.id = l.report_version_id WHERE l.track_id IS NULL AND v.status = 'active' AND v.deleted_at IS NULL AND l.isrc_raw IS NOT NULL").all()) {
+            if (normIsrc(l.isrc_raw) === isrc) { upd.run(id, l.id); relinked++; }
+          }
         }
       }
-      updateRow(db, ctx, 'track', id, p);
-    })();
-  });
+    }
+    updateRow(db, ctx, 'track', id, p);
+    return relinked;
+  })());
 }
 
 // ----------------------------------------------------------------- участия
