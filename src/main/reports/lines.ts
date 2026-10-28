@@ -32,6 +32,8 @@ export interface LineRow {
   trackTitle: string | null;
   origQty: number;
   origRoyaltyKop: number;
+  /** Точная исходная сумма строки из отчёта дистрибьютора (до правок), десятичная строка копеек. */
+  origExactKop: string;
   origRate: string | null;
   origStreamKind: StreamKind;
   origUsage: string | null;
@@ -75,6 +77,8 @@ export interface LinePage {
   totals: { qty: number; royaltyKop: number; origRoyaltyKop: number; edited: number };
   /** Сколько по расчёту выплат начислено выбранному человеку за квартал (когда включён фильтр по человеку). */
   personAccruedKop?: number | null;
+  /** То же по исходным отчётам дистрибьюторов, до правок («Было»). */
+  personOrigAccruedKop?: number | null;
 }
 
 export interface LineSrc { base: BaseLine; edits: EditRec[]; splits: SplitRec[]; pieces: EffPiece[] }
@@ -142,7 +146,7 @@ function loadVersionFull(db: Db, versionId: string): VersionCache {
         upc: l.upc_raw, isrc: l.isrc_raw, code: l.code_raw, artist: l.artist_raw, title: l.title_raw, platform: l.platform, usage: p.usageType, model: l.usage_model,
         country: l.country, month: l.period_month, qty: p.qty, royaltyKop: p.royaltyKop, exactKop: p.exactKop, rate: p.rate, streamKind: p.streamKind, trackId: p.trackId,
         trackTitle: p.trackId ? titles.get(p.trackId) ?? null : null,
-        origQty: moved ? 0 : l.qty, origRoyaltyKop: moved ? 0 : l.royalty_kop, origRate: moved ? null : origRate, origStreamKind: l.stream_kind, origUsage: l.usage_type,
+        origQty: moved ? 0 : l.qty, origRoyaltyKop: moved ? 0 : l.royalty_kop, origExactKop: moved ? '0' : (l.royalty_exact ?? String(l.royalty_kop)), origRate: moved ? null : origRate, origStreamKind: l.stream_kind, origUsage: l.usage_type,
         changed: p.changed, hasSplit: sp.length > 0, splitCount: sp.length,
         lastEditBy: last.get(l.id)?.by ?? null, lastEditAt: last.get(l.id)?.at ?? null,
       });

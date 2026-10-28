@@ -107,6 +107,6 @@ test('запись в БД: внешние ключи целы, всё чере�
   assert.equal(db.prepare('PRAGMA foreign_key_check').all().length, 0);
   assert.equal(Number(db.prepare('SELECT count(*) AS n FROM artist').get()!.n), 7);
   const logged = Number(db.prepare("SELECT count(*) AS n FROM change_log WHERE op = 'insert'").get()!.n);
-  assert.equal(logged, plan.ops.length + 3); // + три настройки по умолчанию
+  assert.equal(logged, plan.ops.length + 4); // + четыре настройки по умолчанию
   assert.throws(() => writeStarterPlan(db, ctx, plan), /только в пустой каталог/);
 });

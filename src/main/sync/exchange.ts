@@ -1,7 +1,7 @@
 // Обмен обновлениями между двумя установками (ТЗ §11, Схема_БД.md §10).
 // Файл = zip: manifest.json, changes.jsonl (события change_log), lines.jsonl (строки отчётов: они не журналируются), files/…
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { PII_FIELDS } from '../domain/validate.ts';
 import { DATA_TABLES } from '../db/schema.ts';
 import { unzipAll } from '../export/zipReader.ts';
@@ -55,7 +55,16 @@ function fileRefs(e: Ev): string[] {
   return out;
 }
 
-export interface BuildOpts { includePii: boolean; author: string; replicaId: string; dk: Buffer; photosDir: string; reportsDir: string }
+export interface BuildOpts { includePii: boolean; author: string; replicaId: string; dk: Buffer; photosDir: string; reportsDir: string; /** Папка output с выданными ведомостями (xlsx/pdf). */ outputDir?: string }
+
+/** Путь выданной ведомости внутри output: «квартал/получатель/файл», без выхода из папки. */
+export function safeStatementPath(rel: unknown): string | null {
+  if (typeof rel !== 'string' || !rel || rel.length > 300) return null;
+  if (rel.startsWith('/') || rel.includes('\\') || rel.includes(':') || /[\u0000-\u001f]/.test(rel)) return null;
+  const parts = rel.split('/');
+  if (parts.length < 2 || parts.length > 4 || parts.some((p) => !p || p === '.' || p === '..')) return null;
+  return /\.(xlsx|pdf)$/i.test(rel) ? rel : null;
+}
 
 export function buildPayload(db: Db, o: BuildOpts): { zip: Buffer; events: number } {
   const peer = o.includePii ? {} : peerKnown(db);
@@ -75,6 +84,18 @@ export function buildPayload(db: Db, o: BuildOpts): { zip: Buffer; events: numbe
       files.push({ name: `files/${kind}/${v}`, data: kind === 'photos' ? decryptBuf(o.dk, raw) : raw });
     }
   };
+  // выданные ведомости: едут все существующие (получатель кладёт только недостающие), чтобы «создана» в базе всегда значило «файл есть»
+  if (o.outputDir) {
+    for (const st of db.prepare('SELECT xlsx_file, pdf_file FROM payout_statement WHERE deleted_at IS NULL').all()) {
+      for (const rel of [st.xlsx_file, st.pdf_file]) {
+        const safe = safeStatementPath(rel);
+        if (!safe || seen.has(`statements/${safe}`)) continue;
+        seen.add(`statements/${safe}`);
+        const p = join(o.outputDir, ...safe.split('/'));
+        if (existsSync(p)) files.push({ name: `files/statements/${safe}`, data: readFileSync(p) });
+      }
+    }
+  }
   const lineRows: Array<Record<string, unknown>> = [];
   for (const e of evs) {
     for (const f of fileRefs(e)) addFile(e.table_name === 'report_version' || e.field === 'file_path' ? 'reports' : 'photos', f);
@@ -184,7 +205,7 @@ function columns(db: Db, table: string): Set<string> {
   return new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((r) => String(r.name)));
 }
 
-export function applyPayload(db: Db, ctx: Ctx, p: Parsed, sel: Selection, io: { dk: Buffer; photosDir: string; reportsDir: string }): ApplyResult {
+export function applyPayload(db: Db, ctx: Ctx, p: Parsed, sel: Selection, io: { dk: Buffer; photosDir: string; reportsDir: string; outputDir?: string }): ApplyResult {
   const prev = previewPayload(db, p, ctx.replicaId);
   const skip = new Set(sel.skipGroups);
   const mine = new Set(sel.keepMine);
@@ -240,6 +261,17 @@ export function applyPayload(db: Db, ctx: Ctx, p: Parsed, sel: Selection, io: { 
   })();
 
   for (const [name, data] of p.files) {
+    const sm = /^files\/statements\/(.+)$/.exec(name);
+    if (sm) {
+      const safe = safeStatementPath(sm[1]);
+      if (!safe || !io.outputDir) continue;
+      const target = join(io.outputDir, ...safe.split('/'));
+      if (existsSync(target)) continue;
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, data);
+      res.files++;
+      continue;
+    }
     const m = /^files\/(photos|reports)\/([^/]+)$/.exec(name);
     if (!m || !SAFE_NAME.test(m[2]!)) continue;
     const dir = m[1] === 'photos' ? io.photosDir : io.reportsDir;

@@ -7,7 +7,7 @@ import type { ApplyResult, ChannelMap, GenerateResult, ImportItem, WizardInfo } 
 import { backupDb } from './db/backup.ts';
 import { insertRow, updateRow } from './db/mutate.ts';
 import { uuidv7 } from './domain/ids.ts';
-import { computeQuarter } from './payouts/calc.ts';
+import { accruedByPayee, computeAccruals } from './payouts/calc.ts';
 import { commitOpening, deleteOpening, listOpening, matchOpeningName, parseOpeningXlsx, updateOpening } from './payouts/opening.ts';
 import { addPayment, addReceipt, deletePayment, deleteReceipt, setParams, taxCsv, taxView } from './tax/store.ts';
 import { generateStatement } from './payouts/generate.ts';
@@ -164,8 +164,8 @@ export function registerReportsIpc(handle: HandleFn, getWindow: () => BrowserWin
     const db = requireSession().db;
     const page = queryLines(db, filter, sort, offset ?? 0, Math.min(limit ?? 200, 500));
     if (filter.person && filter.person !== '__none' && filter.quarter) {
-      const g = computeQuarter(db, filter.quarter).groups.filter((x) => x.payeeId === filter.person);
-      page.personAccruedKop = g.reduce((a, x) => a + x.accruedKop, 0);
+      page.personAccruedKop = accruedByPayee(computeAccruals(db, filter.quarter).rows, 'down').get(filter.person) ?? 0;
+      page.personOrigAccruedKop = accruedByPayee(computeAccruals(db, filter.quarter, true).rows, 'down').get(filter.person) ?? 0;
     }
     return page;
   });
@@ -199,7 +199,7 @@ export function registerReportsIpc(handle: HandleFn, getWindow: () => BrowserWin
   });
 
   // ------------------------------------------------ выплаты (этап 4)
-  handle('payouts:view', ({ quarter }) => payoutsView(requireSession().db, quarter));
+  handle('payouts:view', ({ quarter }) => { const s = requireSession(); return payoutsView(s.db, quarter, s.paths.output); });
   handle('payouts:mark', ({ quarter, groupKey, status, paidKop, paidDate }) => {
     const s = requireSession();
     markPaid(s.db, s.ctx, quarter, groupKey, status, paidKop ?? null, paidDate ?? null);

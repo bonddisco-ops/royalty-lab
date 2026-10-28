@@ -122,6 +122,15 @@ export function Lines({ onChanged }: { onChanged: () => void }) {
         </select>
         <input placeholder="Поиск: артист, трек, ISRC, код, UPC" value={f.q ?? ''} onChange={(e) => setFilter({ q: e.target.value })} />
         <div className="grow" />
+        {page && page.personAccruedKop != null && page.personOrigAccruedKop != null && (() => {
+          const was = page.personOrigAccruedKop, now = page.personAccruedKop, d = now - was;
+          return (
+            <div className="row" style={{ gap: 10 }} title="Начислено этому человеку по расчёту выплат за квартал (до переноса и порога)">
+              <div className="card" style={{ padding: '6px 14px' }}><div className="l">Было (по отчёту дистрибьютора)</div><div className="n" style={{ fontSize: 18 }}>{fmtKop(was)}</div></div>
+              <div className="card" style={{ padding: '6px 14px' }}><div className="l">Стало{d !== 0 && <b style={{ color: d < 0 ? 'var(--bad)' : 'var(--accent)', marginLeft: 6 }}>{d > 0 ? '+' : '−'}{fmtKop(Math.abs(d))}</b>}</div><div className="n" style={{ fontSize: 18 }}>{fmtKop(now)}</div></div>
+            </div>
+          );
+        })()}
         <button onClick={() => setHistory(true)}>История правок</button>
         <button className="primary" disabled={!page || page.total === 0} onClick={() => setBulk(true)}>Массовая правка…</button>
       </div>
@@ -139,7 +148,7 @@ export function Lines({ onChanged }: { onChanged: () => void }) {
         <div className="dim" style={{ marginBottom: 8 }}>
           Строк: <b>{fmtInt(page.total)}</b> · тираж {fmtInt(page.totals.qty)} · роялти <b>{fmtKop(page.totals.royaltyKop)}</b>
           {page.totals.edited > 0 && <> · изменено строк: {fmtInt(page.totals.edited)}{delta !== 0 && <>, разница {delta > 0 ? '+' : ''}{fmtKop(delta)}</>}</>}
-          {page.personAccruedKop != null && <> · начислено этому человеку по расчёту выплат: <b>{fmtKop(page.personAccruedKop)}</b> <button className="link" onClick={() => nav.go('payouts', {})}>к выплатам →</button></>}
+          {page.personAccruedKop != null && <> · <button className="link" onClick={() => nav.go('payouts', {})}>к выплатам →</button></>}
           {' · '}двойной щелчок по ячейке — правка
         </div>
       )}

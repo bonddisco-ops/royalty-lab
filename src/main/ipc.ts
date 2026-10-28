@@ -235,6 +235,7 @@ export function registerIpc(profileDir: string, getWindow: () => BrowserWindow |
   handle('people:get', ({ id, reveal }) => repo.getPerson(db(), id, !!reveal));
   handle('people:create', (data) => repo.createPerson(db(), ctx(), data));
   handle('people:addArtist', ({ personId, artistId, name }) => repo.addArtistToPerson(db(), ctx(), personId, { artistId, name }));
+  handle('people:setOwner', ({ id, owner }) => repo.setOwner(db(), ctx(), id, owner));
   handle('people:update', ({ id, patch }) => repo.updatePerson(db(), ctx(), id, patch));
   handle('artists:list', ({ q }) => repo.listArtists(db(), q));
   handle('artists:delete', ({ id }) => repo.deleteArtist(db(), ctx(), id));

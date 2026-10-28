@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { DEC_ONE, formatDec, parseDec, sumDec } from '../domain/dec.ts';
 import { insertRow, updateRow, deleteRow } from '../db/mutate.ts';
 import { closeNoContractIssue } from '../repo.ts';
+import { getSetting } from '../db/init.ts';
 import type { Ctx, Db, Row } from '../db/types.ts';
 import { safeName } from '../payouts/generate.ts';
 import { renderBlocks, type Block } from './blocks.ts';
@@ -120,9 +121,9 @@ export interface MissingContractItem { id: string; person: string; status: strin
 /** Люди без договора: показываются в «Договорах» красными строками. */
 export function listPeopleWithoutContract(db: Db): MissingContractItem[] {
   return db.prepare(
-    `SELECT c.* FROM counterparty c WHERE c.deleted_at IS NULL AND c.status != 'fl'
+    `SELECT c.* FROM counterparty c WHERE c.deleted_at IS NULL AND c.status != 'fl' AND c.id <> ?
        AND NOT EXISTS (SELECT 1 FROM contract k WHERE k.counterparty_id = c.id AND k.deleted_at IS NULL) ORDER BY c.last_name, c.first_name`,
-  ).all().map((r) => ({ id: r.id, person: personName(r), status: r.status }));
+  ).all(getSetting(db, 'owner_counterparty_id') || '-').map((r) => ({ id: r.id, person: personName(r), status: r.status }));
 }
 
 function readTerms(r: Row): Terms {

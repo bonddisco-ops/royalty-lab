@@ -1,6 +1,6 @@
 // Хранение итогов выплат и выданных комплектов (payout_period, payout_statement) поверх расчёта.
 import { existsSync, rmSync } from 'node:fs';
-import { resolve, sep } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { deleteRow, insertRow, updateRow } from '../db/mutate.ts';
 import type { Ctx, Db } from '../db/types.ts';
 import { computeQuarter, type GroupCalc, type QuarterCalc } from './calc.ts';
@@ -13,6 +13,8 @@ export interface StatementInfo {
   xlsxFile: string | null;
   pdfFile: string | null;
   stale: boolean;
+  /** Записана в базе, но файла нет на этом компьютере (ведомость сделал другой пользователь, файл не доехал). */
+  filesMissing: boolean;
 }
 
 export interface PayoutRow extends GroupCalc {
@@ -51,18 +53,18 @@ export function ensurePeriod(db: Db, ctx: Ctx, quarter: string, g: GroupCalc): s
   return cur.id;
 }
 
-export function latestStatement(db: Db, periodId: string, digest: string): StatementInfo | null {
+export function latestStatement(db: Db, periodId: string, digest: string, outputDir?: string): StatementInfo | null {
   const s = db.prepare('SELECT * FROM payout_statement WHERE payout_period_id = ? AND deleted_at IS NULL ORDER BY version_no DESC').get(periodId);
   if (!s) return null;
   const src = JSON.parse(s.source_versions_json) as { digest?: string };
-  return { id: s.id, versionNo: s.version_no, generatedAt: s.generated_at, generatedBy: s.generated_by, xlsxFile: s.xlsx_file, pdfFile: s.pdf_file, stale: src.digest !== digest };
+  return { id: s.id, versionNo: s.version_no, generatedAt: s.generated_at, generatedBy: s.generated_by, xlsxFile: s.xlsx_file, pdfFile: s.pdf_file, stale: src.digest !== digest, filesMissing: !!outputDir && [s.xlsx_file, s.pdf_file].some((f: string | null) => !!f && !existsSync(join(outputDir, ...f.split('/')))) };
 }
 
 /** Данные вкладки «Выплаты». Чтение не пишет в базу: периоды создаются при выдаче комплекта или отметке «выплачено». */
-export function payoutsView(db: Db, quarter?: string): PayoutsView {
+export function payoutsView(db: Db, quarter?: string, outputDir?: string): PayoutsView {
   const quarters = payoutQuarters(db);
   const q = quarter ?? quarters[0] ?? '';
-  if (!q) return { quarter: '', quarters, calc: { quarter: '', problems: [], totals: { flowRoyaltyKop: 0, allocatedKop: 0, unallocatedKop: 0, accruedKop: 0, payableKop: 0, marginKop: 0 } }, rows: [] };
+  if (!q) return { quarter: '', quarters, calc: { quarter: '', owner: null, carry: { kop: 0, people: 0 }, montage: null, problems: [], totals: { flowRoyaltyKop: 0, allocatedKop: 0, unallocatedKop: 0, accruedKop: 0, payableKop: 0, marginKop: 0 } }, rows: [] };
   const { groups, ...calc } = computeQuarter(db, q);
   const rows: PayoutRow[] = groups.map((g) => {
     const p = findPeriod(db, g, q);
@@ -72,7 +74,7 @@ export function payoutsView(db: Db, quarter?: string): PayoutsView {
       status: p?.status ?? 'draft',
       paidKop: p?.paid_kop ?? null,
       paidDate: p?.paid_date ?? null,
-      statement: p ? latestStatement(db, p.id, g.digest) : null,
+      statement: p ? latestStatement(db, p.id, g.digest, outputDir) : null,
     };
   });
   return { quarter: q, quarters, calc, rows };

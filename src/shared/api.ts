@@ -190,6 +190,7 @@ export interface ChannelMap {
   'people:get': [{ id: string; reveal?: boolean }, PersonDetail];
   'people:create': [Row, string];
   'people:addArtist': [{ personId: string; artistId?: string; name?: string }, string];
+  'people:setOwner': [{ id: string; owner: boolean }, void];
   'people:update': [{ id: string; patch: Row }, void];
   'artists:list': [{ q?: string }, ArtistListItem[]];
   'artists:delete': [{ id: string }, void];

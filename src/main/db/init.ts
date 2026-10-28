@@ -5,6 +5,7 @@ export const DEFAULT_SETTINGS: Record<string, string> = {
   hidden_deduction: '0.06', // множитель 0.94 (Схема_БД.md §8)
   rate_change_mode: 'keep_rate', // при смене тиража ставка за прослушивание остаётся
   auto_lock_minutes: '15',
+  owner_counterparty_id: '', // владелец лейбла: ему не выплачиваем, из «Выплат» он исключён
 };
 
 export function ensureDefaultSettings(db: Db, ctx: Ctx): void {

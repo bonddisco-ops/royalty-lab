@@ -23,10 +23,12 @@ export function Payouts({ onChanged }: { onChanged: () => void }) {
   const [paying, setPaying] = useState<PayoutRow | null>(null);
   const [gen, setGen] = useState<PayoutRow[] | null>(null);
   const [fq, setFq] = useState('');
+  const [onlyHeld, setOnlyHeld] = useState(false);
+  const [showMontage, setShowMontage] = useState(false);
   const [opening, setOpening] = useState(false);
   const [delRow, setDelRow] = useState<PayoutRow | null>(null);
   const nav = useNav();
-  const filtered = (view?.rows ?? []).filter((r) => !fq.trim() || norm(`${r.payeeName} ${r.contractNumber ?? ''} ${r.artists.map((a) => a.name).join(' ')}`).includes(norm(fq.trim())));
+  const filtered = (view?.rows ?? []).filter((r) => !onlyHeld || r.thresholdApplied).filter((r) => !fq.trim() || norm(`${r.payeeName} ${r.contractNumber ?? ''} ${r.artists.map((a) => a.name).join(' ')}`).includes(norm(fq.trim())));
   const { sorted, th } = useSort(filtered, { payee: (r) => r.payeeName, contract: (r) => r.contractNumber, accrued: (r) => r.accruedKop, carriedIn: (r) => r.carriedInKop, payable: (r) => r.payableKop, carriedOut: (r) => r.carriedOutKop, status: (r) => r.status, stmt: (r) => r.statement?.versionNo ?? 0 });
   const load = useCallback(() => { void call('payouts:view', { quarter }).then(setView).catch((e: Error) => setErr(e.message)); }, [quarter]);
   useEffect(load, [load]);
@@ -56,11 +58,36 @@ export function Payouts({ onChanged }: { onChanged: () => void }) {
             <div className="card"><div className="n" style={{ fontSize: 20 }}>{fmtKop(t.flowRoyaltyKop)}</div><div className="l">Приход лейбла (роялти по отчётам)</div></div>
             <div className="card"><div className="n" style={{ fontSize: 20 }}>{fmtKop(t.accruedKop)}</div><div className="l">Начислено получателям</div></div>
             <div className="card"><div className="n" style={{ fontSize: 20 }}>{fmtKop(t.payableKop)}</div><div className="l">К выплате в этом квартале</div></div>
-            <div className="card"><div className="n" style={{ fontSize: 20 }}>{fmtKop(t.marginKop)}</div><div className="l">Остаётся лейблу (с распределённого)</div></div>
+            <div className="card"><div className="n" style={{ fontSize: 20 }}>{fmtKop(t.marginKop)}</div><div className="l">Остаётся лейблу (с распределённого{view.calc.montage && view.calc.montage.montageKop !== 0 ? ', вместе с «Монтажом»' : ''})</div></div>
+            <div className="card click" style={onlyHeld ? { borderColor: 'var(--accent)' } : undefined} onClick={() => setOnlyHeld(!onlyHeld)} title="Не добрали до порога выплаты: сумма уходит на следующий квартал. Клик — показать только их">
+              <div className="n" style={{ fontSize: 20 }}>{fmtKop(view.calc.carry.kop)}</div><div className="l">Переносится дальше · {view.calc.carry.people} чел.{onlyHeld ? ' (показаны только они)' : ''}</div>
+            </div>
+            {view.calc.montage && (
+              <div className="card click" style={showMontage ? { borderColor: 'var(--accent)' } : undefined} onClick={() => setShowMontage(!showMontage)} title="На сколько правки строк уменьшили выплаты людям по сравнению с исходными отчётами. Эти деньги остаются лейблу. Клик — разбивка по людям">
+                <div className="n" style={{ fontSize: 20 }}>{fmtKop(view.calc.montage.montageKop)}</div><div className="l">Монтаж: было {fmtKop(view.calc.montage.origKop)} → стало {fmtKop(view.calc.montage.nowKop)}</div>
+              </div>
+            )}
+            {view.calc.owner && (
+              <div className="card" title="Владелец лейбла: ему не выплачиваем, из «К выплате» исключён">
+                <div className="n" style={{ fontSize: 20 }}>{fmtKop(view.calc.owner.accruedKop)}</div><div className="l">Владельцу (не выплачивается): {view.calc.owner.name}</div>
+              </div>
+            )}
             <div className="card" style={t.unallocatedKop > 0 ? { borderColor: 'var(--bad)' } : undefined}>
               <div className="n" style={{ fontSize: 20, color: t.unallocatedKop > 0 ? 'var(--bad)' : undefined }}>{fmtKop(t.unallocatedKop)}</div><div className="l">Не распределено (нет трека, участника или ставки)</div>
             </div>
           </div>
+          {showMontage && view.calc.montage && (
+            <div className="card" style={{ marginBottom: 12 }}>
+              <b>Монтаж по людям</b> <span className="dim">· сколько выплаты стали меньше исходных; эти деньги остались лейблу</span>
+              {view.calc.montage.rows.length === 0 && <div className="dim">Правок, меняющих выплаты, нет.</div>}
+              {view.calc.montage.rows.length > 0 && (
+                <table><thead><tr><th>Человек</th><th style={{ textAlign: 'right' }}>Было</th><th style={{ textAlign: 'right' }}>Стало</th><th style={{ textAlign: 'right' }}>Монтаж</th></tr></thead>
+                  <tbody>{view.calc.montage.rows.map((m) => (
+                    <tr key={m.payeeId} className={m.isOwner ? 'dim' : undefined}><td>{m.name}{m.isOwner && ' (владелец, в итог не входит)'}</td><td style={{ textAlign: 'right' }}>{fmtKop(m.origKop)}</td><td style={{ textAlign: 'right' }}>{fmtKop(m.nowKop)}</td><td style={{ textAlign: 'right' }}><b>{fmtKop(m.montageKop)}</b></td></tr>))}</tbody>
+                </table>
+              )}
+            </div>
+          )}
           {view.calc.problems.length > 0 && (
             <>
               <h3>Что мешает посчитать полностью</h3>
@@ -86,9 +113,9 @@ export function Payouts({ onChanged }: { onChanged: () => void }) {
                   <td style={{ textAlign: 'right' }}>{fmtKop(r.accruedKop)}</td>
                   <td style={{ textAlign: 'right' }} className="dim">{r.carriedInKop ? fmtKop(r.carriedInKop) : ''}</td>
                   <td style={{ textAlign: 'right' }}><b>{fmtKop(r.payableKop)}</b></td>
-                  <td style={{ textAlign: 'right' }}>{r.thresholdApplied && <span className="badge" title={`Ниже порога ${fmtKop(r.thresholdKop)}`}>{fmtKop(r.carriedOutKop)}</span>}</td>
+                  <td style={{ textAlign: 'right' }}>{r.thresholdApplied && <><span className="badge" title={`Ниже порога ${fmtKop(r.thresholdKop)}`}>{fmtKop(r.carriedOutKop)}</span>{r.thresholdKop != null && <div className="dim" style={{ fontSize: 12 }}>до порога ещё {fmtKop(r.thresholdKop - r.carriedOutKop)}</div>}</>}</td>
                   <td><span className={'badge' + (r.status === 'paid' ? ' ok' : '')}>{STATUS[r.status]}</span>{r.status === 'paid' && <div className="dim" style={{ fontSize: 11 }}>{fmtKop(r.paidKop)} · {r.paidDate}</div>}</td>
-                  <td>{r.statement ? <><span className={'badge' + (r.statement.stale ? ' bad' : ' ok')}>v{r.statement.versionNo}{r.statement.stale ? ' · устарел' : ''}</span>
+                  <td>{r.statement ? <><span className={'badge' + (r.statement.stale ? ' bad' : ' ok')}>v{r.statement.versionNo}{r.statement.stale ? ' · устарел' : ''}</span>{r.statement.filesMissing && <span className="badge bad" title="Ведомость создана на другом компьютере, а файлов здесь нет. Попросите прислать новое обновление (.rlab) или создайте комплект заново.">нет файла</span>}
                     {r.statement.pdfFile && <button className="link" onClick={() => void call('payouts:open', { path: r.statement!.pdfFile! })}>PDF</button>}
                     {r.statement.xlsxFile && <button className="link" onClick={() => void call('payouts:open', { path: r.statement!.xlsxFile! })}>Excel</button>}</> : <span className="dim">не выдан</span>}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>

@@ -75,9 +75,19 @@ export interface GroupCalc {
   artists: Array<{ artistId: string; name: string; rows: number; royaltyKop: number }>;
 }
 
+/** «Монтаж»: на сколько правки строк уменьшили выплаты людям по сравнению с исходными отчётами дистрибьюторов. */
+export interface MontageRow { payeeId: string; name: string; origKop: number; nowKop: number; montageKop: number; isOwner: boolean }
+export interface Montage { origKop: number; nowKop: number; montageKop: number; rows: MontageRow[] }
+
 export interface QuarterCalc {
   quarter: string;
   groups: GroupCalc[];
+  /** Владелец лейбла: ему не выплачиваем, из groups он исключён, его сумма показывается отдельно. */
+  owner: { id: string; name: string; accruedKop: number } | null;
+  /** Сколько переносится на следующий квартал (не добрали до порога). */
+  carry: { kop: number; people: number };
+  /** Только для верхнего (запрошенного) квартала. */
+  montage: Montage | null;
   problems: Problem[];
   totals: { flowRoyaltyKop: number; allocatedKop: number; unallocatedKop: number; accruedKop: number; payableKop: number; marginKop: number };
 }
@@ -102,7 +112,8 @@ function fullName(c: { last_name?: string | null; first_name?: string | null; mi
 }
 
 /** Начисления по строкам квартала: строка × участник. Только отчёты с маршрутом «Приход лейбла». */
-export function computeAccruals(db: Db, quarter: string): { rows: AccrualRow[]; problems: Problem[]; flowRoyaltyKop: number; allocatedKop: number } {
+/** original = true: суммы строк «как в отчёте дистрибьютора», до всех правок и переносов (для «Было» и «Монтажа»). */
+export function computeAccruals(db: Db, quarter: string, original = false): { rows: AccrualRow[]; problems: Problem[]; flowRoyaltyKop: number; allocatedKop: number } {
   const dedS = parseDec(getSetting(db, 'hidden_deduction')) ?? parseDec('0.06')!;
   const mult = DEC_ONE - dedS;
   const flows = new Map<string, string>();
@@ -140,16 +151,18 @@ export function computeAccruals(db: Db, quarter: string): { rows: AccrualRow[]; 
 
   for (const l of filteredLines(db, { quarter }) as LineRow[]) {
     if (flows.get(l.reportId) !== 'artists') continue;
-    flowRoyalty += l.royaltyKop;
-    if (!l.trackId) { bump('no_track', 'Строки без трека в каталоге', l.royaltyKop); continue; }
+    const lineKop = original ? l.origRoyaltyKop : l.royaltyKop;
+    const lineExact = original ? l.origExactKop : l.exactKop;
+    flowRoyalty += lineKop;
+    if (!l.trackId) { bump('no_track', 'Строки без трека в каталоге', lineKop); continue; }
     const ps = parts.get(l.trackId);
-    if (!ps || ps.length === 0) { bump('no_participation', `Трек без участников: ${l.trackTitle ?? l.title ?? l.trackId}`, l.royaltyKop); continue; }
+    if (!ps || ps.length === 0) { bump('no_participation', `Трек без участников: ${l.trackTitle ?? l.title ?? l.trackId}`, lineKop); continue; }
     let used = false;
     for (const p of ps) {
       const art = artists.get(p.artist_id);
-      if (p.label_rate === null || p.label_rate === '') { bump('no_rate', `Нет ставки лейбла: ${art?.name ?? '?'} — ${l.trackTitle ?? l.title}`, l.royaltyKop); continue; }
+      if (p.label_rate === null || p.label_rate === '') { bump('no_rate', `Нет ставки лейбла: ${art?.name ?? '?'} — ${l.trackTitle ?? l.title}`, lineKop); continue; }
       const payee = p.payee ?? art?.cp ?? null;
-      if (!payee) { bump('no_payee', `У артиста нет получателя: ${art?.name ?? '?'}`, l.royaltyKop); continue; }
+      if (!payee) { bump('no_payee', `У артиста нет получателя: ${art?.name ?? '?'}`, lineKop); continue; }
       let shareStr = p.share_related;
       if (l.rights === 'authors') shareStr = p.share_authors;
       else if (l.rights === 'mixed' && !decEquals(p.share_authors, p.share_related) && !mixedSeen.has(p.id)) {
@@ -163,13 +176,13 @@ export function computeAccruals(db: Db, quarter: string): { rows: AccrualRow[]; 
       rows.push({
         key: l.key, lineId: l.lineId, reportId: l.reportId, distributor: l.distributor, rights: l.rights, upc: l.upc, isrc: l.isrc, code: l.code,
         artistRaw: l.artist, title: l.title ?? l.trackTitle, platform: l.platform, usage: l.usage ?? l.model, country: l.country, month: l.month,
-        qty: l.qty, royaltyKop: l.royaltyKop, exactKop: l.exactKop, trackId: l.trackId, artistId: p.artist_id, artistName: art?.name ?? '', participationId: p.id,
+        qty: l.qty, royaltyKop: lineKop, exactKop: lineExact, trackId: l.trackId, artistId: p.artist_id, artistName: art?.name ?? '', participationId: p.id,
         share: shareStr, labelRate: p.label_rate, groupKey: `${payee}|${contractId ?? ''}`,
-        scaled: (parseDec(l.exactKop) ?? BigInt(l.royaltyKop) * DEC_ONE) * share * rate * mult,
+        scaled: (parseDec(lineExact) ?? BigInt(lineKop) * DEC_ONE) * share * rate * mult,
       });
       used = true;
     }
-    if (used) allocated += l.royaltyKop;
+    if (used) allocated += lineKop;
   }
   return { rows, problems: [...probs.values()], flowRoyaltyKop: flowRoyalty, allocatedKop: allocated };
 }
@@ -186,6 +199,13 @@ export function openingFor(db: Db, quarter: string): Array<{ id: string; name: s
 function prevQuarter(db: Db, quarter: string): string | null {
   const r = db.prepare("SELECT max(quarter) AS q FROM report WHERE quarter < ? AND deleted_at IS NULL AND flow = 'artists'").get(quarter);
   return r?.q ?? null;
+}
+
+/** Начислено по получателям (без переноса и порогов), округление как в выплатах. */
+export function accruedByPayee(rows: AccrualRow[], mode: RoundMode): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const g of groupRows(rows)) out.set(g.payeeId, (out.get(g.payeeId) ?? 0) + roundDiv(g.scaled, SCALE4, mode));
+  return out;
 }
 
 interface RawGroup { key: string; payeeId: string; contractId: string | null; scaled: bigint; attr: bigint; qty: number; rows: AccrualRow[] }
@@ -213,7 +233,11 @@ export function digestOf(rows: AccrualRow[], deduction: string): string {
 
 /** Итоги квартала: по получателям и договорам, с переносом ниже порога из прошлых кварталов. */
 export function computeQuarter(db: Db, quarter: string, mode: RoundMode = 'down', depth = 0): QuarterCalc {
-  const { rows, problems, flowRoyaltyKop, allocatedKop } = computeAccruals(db, quarter);
+  const { rows, problems, flowRoyaltyKop: nowFlowKop, allocatedKop: nowAllocKop } = computeAccruals(db, quarter);
+  // приход лейбла — как в отчётах дистрибьюторов: правки строк уменьшают выплаты людям, а разница остаётся лейблу («Монтаж»)
+  const orig = depth === 0 ? computeAccruals(db, quarter, true) : null;
+  const flowRoyaltyKop = orig?.flowRoyaltyKop ?? nowFlowKop;
+  const allocatedKop = orig?.allocatedKop ?? nowAllocKop;
   const ded = getSetting(db, 'hidden_deduction');
   const prev = depth < 40 ? prevQuarter(db, quarter) : null;
   const prevByKey = new Map<string, GroupCalc>();
@@ -225,13 +249,16 @@ export function computeQuarter(db: Db, quarter: string, mode: RoundMode = 'down'
   for (const c of db.prepare('SELECT * FROM contract').all()) contracts.set(c.id, { number: c.number, date: c.date, threshold: c.threshold_rub, rule: c.threshold_rule, cpId: c.counterparty_id });
 
   const groups: GroupCalc[] = [];
-  const raw = groupRows(rows);
+  const ownerId = getSetting(db, 'owner_counterparty_id');
+  const allRaw = groupRows(rows);
+  const raw = allRaw.filter((g) => !ownerId || g.payeeId !== ownerId);
   // получатели, у которых что-то перенесено с прошлых кварталов, но в этом начислений нет
   for (const [k, pg] of prevByKey) if (pg.carriedOutKop > 0 && !raw.some((g) => g.key === k)) raw.push({ key: k, payeeId: pg.payeeId, contractId: pg.contractId, scaled: 0n, attr: 0n, qty: 0, rows: [] });
   // входящие остатки из прежнего учёта: считаются на человека, входят в «перенос» этого квартала и в проверку порога
   const openProblems: Problem[] = [];
   const openByKey = new Map<string, number>();
   for (const ob of openingFor(db, quarter)) {
+    if (ownerId && ob.payeeId === ownerId) continue;
     if (!ob.payeeId) { openProblems.push({ kind: 'opening_unassigned', text: `Входящий остаток «${ob.name}» ${(ob.kop / 100).toFixed(2)} ₽ не привязан к человеку — не попадёт в выплаты`, rows: 0, royaltyKop: 0 }); continue; }
     let g = raw.find((x) => x.payeeId === ob.payeeId && x.contractId) ?? raw.find((x) => x.payeeId === ob.payeeId);
     if (!g) {
@@ -284,9 +311,31 @@ export function computeQuarter(db: Db, quarter: string, mode: RoundMode = 'down'
     else if (g.thresholdKop === null) extra.push({ kind: 'no_threshold_contract', text: `В договоре ${g.contractNumber} не задан порог выплаты: платим всё`, rows: 0, royaltyKop: 0 });
   }
   const accruedAll = groups.reduce((a, g) => a + g.accruedKop, 0);
+  const nameOf = (id: string): string => { const c = cps.get(id); return c ? fullName(c) : '(не найден)'; };
+  const ownerAccrued = ownerId ? allRaw.filter((g) => g.payeeId === ownerId).reduce((a, g) => a + roundDiv(g.scaled, SCALE4, mode), 0) : 0;
+  let montage: Montage | null = null;
+  if (depth === 0) {
+    const was = accruedByPayee(orig!.rows, mode);
+    const now = accruedByPayee(rows, mode);
+    const mrows: MontageRow[] = [];
+    for (const id of new Set([...was.keys(), ...now.keys()])) {
+      const o = was.get(id) ?? 0, n = now.get(id) ?? 0;
+      if (o === n) continue;
+      mrows.push({ payeeId: id, name: nameOf(id), origKop: o, nowKop: n, montageKop: o - n, isOwner: !!ownerId && id === ownerId });
+    }
+    mrows.sort((x, y) => Math.abs(y.montageKop) - Math.abs(x.montageKop));
+    const counted = mrows.filter((r) => !r.isOwner);
+    const origAll = [...was].filter(([id]) => id !== ownerId).reduce((a, [, v]) => a + v, 0);
+    const nowAll = [...now].filter(([id]) => id !== ownerId).reduce((a, [, v]) => a + v, 0);
+    montage = { origKop: origAll, nowKop: nowAll, montageKop: counted.reduce((a, r) => a + r.montageKop, 0), rows: mrows };
+  }
+  const held = groups.filter((g) => g.carriedOutKop > 0);
   return {
     quarter,
     groups,
+    owner: ownerId ? { id: ownerId, name: nameOf(ownerId), accruedKop: ownerAccrued } : null,
+    carry: { kop: held.reduce((a, g) => a + g.carriedOutKop, 0), people: new Set(held.map((g) => g.payeeId)).size },
+    montage,
     problems: [...problems, ...openProblems, ...extra],
     totals: {
       flowRoyaltyKop, allocatedKop, unallocatedKop: flowRoyaltyKop - allocatedKop, accruedKop: accruedAll,

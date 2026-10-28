@@ -51,6 +51,7 @@ function PersonDialog({ id, onClose }: { id: string | null; onClose: () => void 
         <h1 style={{ margin: 0 }}>{id ? 'Карточка человека' : 'Новый человек'}</h1>
       </div>
       {id && det?.masked && <div className="row" style={{ marginBottom: 8 }}><span className="dim">Паспорт, ИНН, счета скрыты.</span><button onClick={() => { setReveal(true); void load(true); }}>Показать и редактировать</button></div>}
+      {id && det && editable && <label className="chk" style={{ marginBottom: 8 }} title="Выплаты этому человеку не считаются и не попадают в итоги «Выплат». Остаётся в строках и коллабах."><input type="checkbox" checked={det.isOwner} onChange={(e) => { setErr(''); void call('people:setOwner', { id, owner: e.target.checked }).then(() => load(reveal)).catch((x: Error) => setErr(x.message)); }} /> Это владелец лейбла, себе не выплачиваем</label>}
       {det && <div style={{ marginBottom: 8 }}><span className="badge">Заполнено {det.completeness.filled} из {det.completeness.total}</span>{det.checks.map((c, i) => <span key={i} className="badge bad">{c.message}</span>)}</div>}
       {FIELD_GROUPS.map(([g, fields]) => (
         <div key={g}><h3>{g}</h3><div className="grid2">{fields.map((f) => (

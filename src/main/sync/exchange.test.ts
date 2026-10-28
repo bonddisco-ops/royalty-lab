@@ -108,3 +108,27 @@ test('фото артиста и обложка трека переезжают 
   assert.equal(readPhoto(join(dB, 'photos'), dkB, file, false)!.toString(), 'FULLIMG');
   assert.equal(readPhoto(join(dB, 'photos'), dkB, cover, true)!.toString(), 'CT');
 });
+
+test('ведомости (xlsx/pdf) переезжают в обмене и раскладываются в output получателя; опасные пути отбрасываются', async () => {
+  const { mkdirSync, writeFileSync, existsSync, readFileSync, mkdtempSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { safeStatementPath } = await import('./exchange.ts');
+  assert.equal(safeStatementPath('../x.xlsx'), null);
+  assert.equal(safeStatementPath('/etc/a.xlsx'), null);
+  assert.equal(safeStatementPath('2026Q3/Иванов/Иванов 2026Q3.xlsx'), '2026Q3/Иванов/Иванов 2026Q3.xlsx');
+  assert.equal(safeStatementPath('2026Q3/Иванов/virus.exe'), null);
+  const A = mk('A'), B = mk('B');
+  const root = mkdtempSync(join(tmpdir(), 'rl-st-'));
+  const outA = join(root, 'a'), outB = join(root, 'b');
+  const rel = '2026Q3/Иванов Иван/Иванов 2026Q3.xlsx';
+  mkdirSync(join(outA, '2026Q3', 'Иванов Иван'), { recursive: true });
+  writeFileSync(join(outA, ...rel.split('/')), Buffer.from('XLSX-DATA'));
+  const cp = insertRow(A.db, A.ctx, 'counterparty', { last_name: 'Иванов' });
+  const per = insertRow(A.db, A.ctx, 'payout_period', { counterparty_id: cp, quarter: '2026Q3', status: 'draft' } as never);
+  insertRow(A.db, A.ctx, 'payout_statement', { payout_period_id: per, version_no: 1, xlsx_file: rel, pdf_file: null, generated_at: new Date().toISOString(), source_versions_json: {}, status: 'current' });
+  const zip = buildPayload(A.db, { includePii: false, author: 'A', replicaId: 'A', dk, photosDir: io.photosDir, reportsDir: io.reportsDir, outputDir: outA }).zip;
+  const r = applyPayload(B.db, B.ctx, parsePayload(zip), { skipGroups: [], keepMine: [] }, { ...io, outputDir: outB });
+  assert.ok(r.files >= 1);
+  assert.equal(readFileSync(join(outB, ...rel.split('/'))).toString(), 'XLSX-DATA');
+  assert.ok(existsSync(join(outB, '2026Q3')));
+});

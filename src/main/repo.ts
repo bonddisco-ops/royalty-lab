@@ -3,6 +3,7 @@ import { formatDec, isWholeShare, parseDec, sumDec, DEC_ONE } from './domain/dec
 import { cleanText, isIsrc, normIsrc, normKey } from './domain/normalize.ts';
 import { checkPerson, completeness, maskValue, PII_FIELDS, type PersonCheck } from './domain/validate.ts';
 import { insertRow, mutate, updateRow, deleteRow } from './db/mutate.ts';
+import { getSetting } from './db/init.ts';
 import type { Ctx, Db, Row } from './db/types.ts';
 
 const PII = new Set<string>(PII_FIELDS);
@@ -68,6 +69,8 @@ export interface PersonDetail {
   completeness: { filled: number; total: number; missing: string[] };
   artists: Array<{ id: string; name: string }>;
   contracts: Array<{ id: string; number: string; date: string | null; kind: string; rate_default: string | null; threshold_rub: number | null; has_pdf: number }>;
+  /** Владелец лейбла: ему не выплачиваем. */
+  isOwner: boolean;
 }
 
 export function getPerson(db: Db, id: string, reveal: boolean): PersonDetail {
@@ -77,6 +80,7 @@ export function getPerson(db: Db, id: string, reveal: boolean): PersonDetail {
   for (const [k, v] of Object.entries(c)) fields[k] = !reveal && PII.has(k) && v ? maskValue(v) : v;
   return {
     id,
+    isOwner: getSetting(db, 'owner_counterparty_id') === id,
     fields,
     masked: !reveal,
     checks: checkPerson(c),
@@ -84,6 +88,21 @@ export function getPerson(db: Db, id: string, reveal: boolean): PersonDetail {
     artists: db.prepare('SELECT id, name FROM artist WHERE counterparty_id = ? AND deleted_at IS NULL ORDER BY name').all(id) as PersonDetail['artists'],
     contracts: db.prepare('SELECT id, number, date, kind, rate_default, threshold_rub, has_pdf FROM contract WHERE counterparty_id = ? AND deleted_at IS NULL ORDER BY number').all(id) as PersonDetail['contracts'],
   };
+}
+
+/** Владелец лейбла — один: ему не выплачиваем, из «Выплат», «Проверить» и списка «без договора» он исключается. */
+export function setOwner(db: Db, ctx: Ctx, personId: string, owner: boolean): void {
+  db.transaction(() => {
+    if (!db.prepare('SELECT 1 FROM counterparty WHERE id = ? AND deleted_at IS NULL').get(personId)) throw new Error('Человек не найден');
+    if (!owner) {
+      if (getSetting(db, 'owner_counterparty_id') === personId) setSetting(db, ctx, 'owner_counterparty_id', '');
+      return;
+    }
+    setSetting(db, ctx, 'owner_counterparty_id', personId);
+    for (const i of db.prepare("SELECT id FROM issue WHERE entity_type = 'counterparty' AND entity_id = ? AND kind IN ('no_contract', 'missing_pii') AND status = 'open' AND deleted_at IS NULL").all(personId)) {
+      updateRow(db, ctx, 'issue', i.id, { status: 'resolved', resolved_by: ctx.userId, resolved_at: new Date().toISOString(), resolution_json: { auto: 'владелец лейбла' } });
+    }
+  })();
 }
 
 export function createPerson(db: Db, ctx: Ctx, data: Row): string {

@@ -13,7 +13,7 @@ const pending = new Map<string, Parsed>();
 export function registerSyncIpc(handle: HandleFn, getWindow: () => BrowserWindow | null): void {
   handle('sync:save', async ({ password, includePii }) => {
     const s = requireSession();
-    const { zip, events } = buildPayload(s.db, { includePii, author: s.user.login, replicaId: s.ctx.replicaId, dk: s.dk, photosDir: s.paths.photos, reportsDir: s.paths.reports });
+    const { zip, events } = buildPayload(s.db, { includePii, author: s.user.login, replicaId: s.ctx.replicaId, dk: s.dk, photosDir: s.paths.photos, reportsDir: s.paths.reports, outputDir: s.paths.output });
     const sealed = await sealRlab(zip, password);
     const win = getWindow();
     const stamp = new Date().toISOString().slice(0, 10);
@@ -41,7 +41,7 @@ export function registerSyncIpc(handle: HandleFn, getWindow: () => BrowserWindow
     const p = pending.get(token);
     if (!p) throw new Error('Файл обновления уже закрыт. Откройте его заново.');
     backupDb(s.db, s.open.file, s.paths.backups, 'before-update');
-    const r = applyPayload(s.db, s.ctx, p, { skipGroups, keepMine }, { dk: s.dk, photosDir: s.paths.photos, reportsDir: s.paths.reports });
+    const r = applyPayload(s.db, s.ctx, p, { skipGroups, keepMine }, { dk: s.dk, photosDir: s.paths.photos, reportsDir: s.paths.reports, outputDir: s.paths.output });
     pending.delete(token);
     return r;
   });
