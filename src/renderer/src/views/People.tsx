@@ -74,7 +74,7 @@ function PersonDialog({ id, onClose }: { id: string | null; onClose: () => void 
       </>)}
       {err && <div className="err">{err}</div>}
       {photoOpen && id && <PhotoEditor table="counterparty" id={id} file={(det?.fields.photo_file as string | null) ?? null} title={det ? [det.fields.last_name, det.fields.first_name].filter(Boolean).join(' ') : ''} onClose={(ch) => { setPhotoOpen(false); if (ch) void load(reveal); }} />}
-      <div className="row end"><button onClick={onClose}>Закрыть</button>{editable && <button className="primary" onClick={save}>Сохранить</button>}</div>
+      <div className="row end">{id && <button className="link" onClick={() => { if (confirm('Удалить этого человека? Это возможно, только если за ним нет артистов, договора и расчётов.')) { setErr(''); void call('people:delete', { id }).then(onClose).catch((e: Error) => setErr(e.message)); } }}>Удалить человека</button>}<div className="grow" /><button onClick={onClose}>Закрыть</button>{editable && <button className="primary" onClick={save}>Сохранить</button>}</div>
     </div></div>
   );
 }

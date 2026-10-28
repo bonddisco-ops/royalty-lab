@@ -188,3 +188,22 @@ test('смена ISRC: связи остаются, старый код сохр
   repo.updateTrack(db, c, t1, { isrc: null });
   assert.equal(repo.listTracks(db).find((x) => x.id === t1)!.isrc, null);
 });
+
+test('удаление: артист с треками и человек с артистом/договором защищены, пустые удаляются', () => {
+  const db = freshDb();
+  const c = { userId: 'owner', replicaId: 'r1' };
+  const p = repo.createPerson(db, c, { last_name: 'Сидоров', first_name: 'Сидор' });
+  const a = repo.createArtist(db, c, { name: 'Сидр', counterparty_id: p });
+  const t = repo.createTrack(db, c, { title: 'Трек' });
+  const part = repo.addParticipation(db, c, { trackId: t, artistId: a, shareAuthors: '1', shareRelated: '1', labelRate: null });
+  assert.throws(() => repo.deleteArtist(db, c, a), /есть треки/);
+  assert.throws(() => repo.deletePerson(db, c, p), /закреплены артисты/);
+  repo.removeParticipation(db, c, part);
+  repo.deleteArtist(db, c, a);
+  assert.equal(repo.listArtists(db).length, 0);
+  insertRow(db, c, 'contract', { counterparty_id: p, number: 'Д-1' });
+  assert.throws(() => repo.deletePerson(db, c, p), /есть договор/);
+  db.prepare('UPDATE contract SET deleted_at = ?').run(new Date().toISOString());
+  repo.deletePerson(db, c, p);
+  assert.equal(repo.listPeople(db).length, 0);
+});

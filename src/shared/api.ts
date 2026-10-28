@@ -192,6 +192,8 @@ export interface ChannelMap {
   'people:addArtist': [{ personId: string; artistId?: string; name?: string }, string];
   'people:update': [{ id: string; patch: Row }, void];
   'artists:list': [{ q?: string }, ArtistListItem[]];
+  'artists:delete': [{ id: string }, void];
+  'people:delete': [{ id: string }, void];
   'artists:create': [{ name: string; counterparty_id?: string | null }, string];
   'artists:update': [{ id: string; patch: { name?: string; counterparty_id?: string | null; notes?: string | null } }, void];
   'artists:addVariant': [{ id: string; text: string }, void];

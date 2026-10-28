@@ -33,7 +33,7 @@ export function Artists({ onChanged }: { onChanged: () => void }) {
       </div>
       {err && <div className="err">{err}</div>}
       <table>
-        <thead><tr>{th('name', 'Артист')}{th('person', 'Человек (получатель)')}<th title="Как этого артиста могут назвать в отчётах дистрибьюторов: «Shtain», «ШТАЙН», «Shtain feat. X». Если имя из отчёта совпадёт с одним из написаний — строка сама привяжется к этому артисту.">Другие написания имени ⓘ</th>{th('tracks', 'Треков')}</tr></thead>
+        <thead><tr>{th('name', 'Артист')}{th('person', 'Человек (получатель)')}<th title="Как этого артиста могут назвать в отчётах дистрибьюторов: «Shtain», «ШТАЙН», «Shtain feat. X». Если имя из отчёта совпадёт с одним из написаний — строка сама привяжется к этому артисту.">Другие написания имени ⓘ</th>{th('tracks', 'Треков')}<th /></tr></thead>
         <tbody>{sorted.map((a) => (
           <tr key={a.id}>
             <td><div className="nameCell"><Avatar file={a.photo} onClick={() => setPhotoFor(a)} title="Фото артиста" />{a.name}{a.withoutContract && <button className="badge bad" title="Создать договор" onClick={() => a.counterpartyId ? nav.go('contracts', { contractFor: a.counterpartyId }) : undefined}>{a.counterpartyId ? 'нет договора — создать' : 'не привязан к человеку'}</button>}</div></td>
@@ -42,6 +42,7 @@ export function Artists({ onChanged }: { onChanged: () => void }) {
               <input style={{ width: 150 }} placeholder="+ другое написание" value={variant[a.id] ?? ''} onChange={(e) => setVariant({ ...variant, [a.id]: e.target.value })}
                 onKeyDown={(e) => { if (e.key === 'Enter' && variant[a.id]?.trim()) void run(async () => { await call('artists:addVariant', { id: a.id, text: variant[a.id]! }); setVariant({ ...variant, [a.id]: '' }); }); }} /></td>
             <td className="dim">{a.tracks}</td>
+            <td><button className="link" onClick={() => { if (confirm(`Удалить артиста «${a.name}»?${a.tracks ? ' У него есть треки, программа не даст удалить.' : ''}`)) void run(() => call('artists:delete', { id: a.id })); }}>удалить</button></td>
           </tr>))}</tbody>
       </table>
       {photoFor && <PhotoEditor table="artist" id={photoFor.id} file={photoFor.photo} title={photoFor.name} onClose={(ch) => { setPhotoFor(null); if (ch) load(); }} />}

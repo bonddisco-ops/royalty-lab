@@ -30,6 +30,10 @@ export function Contracts({ onChanged }: { onChanged: () => void }) {
     else if (contractId) open(contractId);
     if (contractFor || contractId) nav.clear();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const remove = (c: ContractListItem) => {
+    if (!confirm(`Удалить договор ${c.number} (${c.person}) вместе с его приложениями? Треки останутся, но придётся заново вносить их в приложения.`)) return;
+    setErr(''); void call('contracts:delete', { id: c.id }).then(() => { load(); onChanged(); }).catch((e: Error) => setErr(e.message));
+  };
   const needle = norm(q.trim());
   const shown = (list ?? []).filter((c) => !needle || norm(`${c.person} ${c.number} ${c.date ?? ''}`).includes(needle));
   const shownMissing = missing.filter((m) => !needle || norm(m.person).includes(needle));
@@ -62,7 +66,7 @@ export function Contracts({ onChanged }: { onChanged: () => void }) {
               <tr key={c.id}>
                 <td>{c.number}</td><td>{fmtDate(c.date)}</td><td>{c.person}</td><td>{c.kind ? KIND[c.kind] ?? c.kind : '—'}</td>
                 <td>{c.thresholdRub === null ? '—' : c.thresholdRub.toLocaleString('ru-RU')}</td><td>{c.appendices}</td><td>{c.pending > 0 ? <span className="badge bad">{c.pending} {c.pending === 1 ? 'трек' : 'треков'}</span> : <span className="dim">—</span>}</td>
-                <td><button onClick={() => open(c.id)}>Открыть</button></td>
+                <td><button onClick={() => open(c.id)}>Открыть</button> <button className="link" onClick={() => remove(c)}>удалить</button></td>
               </tr>))}
           </tbody>
         </table>
@@ -161,6 +165,7 @@ function Editor({ detail, onClose }: { detail: ContractDetail; onClose: () => vo
         <h1 style={{ margin: 0 }}>{detail.person}</h1>
         <span className="badge">{kind ? KIND[kind] : ''}</span>
         <div className="grow" />
+        {edit.id && <button className="link" onClick={() => { if (confirm(`Удалить договор ${edit.number} (${detail.person}) вместе с его приложениями?`)) void call('contracts:delete', { id: edit.id! }).then(onClose).catch((e: Error) => setErr(e.message)); }}>Удалить договор</button>}
         <button className={tab === 'contract' ? 'primary' : ''} onClick={() => setTab('contract')}>Договор</button>
         <button className={tab === 'appendix' ? 'primary' : ''} onClick={() => setTab('appendix')}>Приложения{apps.length ? ` (${apps.length})` : ''}</button>
       </div>

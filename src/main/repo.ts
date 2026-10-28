@@ -126,6 +126,38 @@ export function addArtistToPerson(db: Db, ctx: Ctx, personId: string, d: { artis
   })();
 }
 
+const countOf = (db: Db, sql: string, ...args: unknown[]): number => Number(db.prepare(sql).get(...args)!.n);
+
+/** Артиста можно удалить, пока на нём нет треков: иначе пропадут доли и начисления. Написания и открытые вопросы по нему удаляются вместе с ним. */
+export function deleteArtist(db: Db, ctx: Ctx, id: string): void {
+  db.transaction(() => {
+    const a = db.prepare('SELECT name FROM artist WHERE id = ? AND deleted_at IS NULL').get(id);
+    if (!a) throw new Error('Артист не найден');
+    const n = countOf(db, 'SELECT count(*) n FROM participation p JOIN track t ON t.id = p.track_id AND t.deleted_at IS NULL WHERE p.artist_id = ? AND p.deleted_at IS NULL', id);
+    if (n > 0) throw new Error(`У артиста «${a.name}» есть треки (${n}). Сначала уберите его из треков в разделе «Треки» или добавьте его имя как другое написание к настоящему артисту.`);
+    for (const v of db.prepare('SELECT id FROM artist_name_variant WHERE artist_id = ? AND deleted_at IS NULL').all(id)) deleteRow(db, ctx, 'artist_name_variant', v.id);
+    for (const i of db.prepare("SELECT id FROM issue WHERE entity_type = 'artist' AND entity_id = ? AND status = 'open' AND deleted_at IS NULL").all(id)) deleteRow(db, ctx, 'issue', i.id);
+    deleteRow(db, ctx, 'artist', id);
+  })();
+}
+
+/** Человека можно удалить, если за ним нет договоров, артистов, расчётов выплат и входящих остатков. */
+export function deletePerson(db: Db, ctx: Ctx, id: string): void {
+  db.transaction(() => {
+    const p = db.prepare('SELECT last_name, first_name, middle_name FROM counterparty WHERE id = ? AND deleted_at IS NULL').get(id);
+    if (!p) throw new Error('Человек не найден');
+    const who = personDisplay(p);
+    const arts = db.prepare('SELECT name FROM artist WHERE counterparty_id = ? AND deleted_at IS NULL ORDER BY name').all(id).map((r) => r.name);
+    if (arts.length) throw new Error(`За «${who}» закреплены артисты: ${arts.join(', ')}. Сначала открепите их в разделе «Артисты».`);
+    if (countOf(db, 'SELECT count(*) n FROM contract WHERE counterparty_id = ? AND deleted_at IS NULL', id)) throw new Error(`У «${who}» есть договор. Сначала удалите договор в разделе «Договоры».`);
+    if (countOf(db, 'SELECT count(*) n FROM participation WHERE payee_counterparty_id = ? AND deleted_at IS NULL', id)) throw new Error(`«${who}» указан получателем выплаты в треках. Сначала смените получателя в «Треках».`);
+    if (countOf(db, 'SELECT count(*) n FROM payout_period WHERE counterparty_id = ? AND deleted_at IS NULL', id)) throw new Error(`По «${who}» уже есть расчёты выплат, удалять такого человека нельзя.`);
+    if (countOf(db, 'SELECT count(*) n FROM opening_balance WHERE counterparty_id = ? AND deleted_at IS NULL', id)) throw new Error(`По «${who}» есть входящий остаток. Сначала удалите его в «Выплатах».`);
+    for (const i of db.prepare("SELECT id FROM issue WHERE entity_type = 'counterparty' AND entity_id = ? AND status = 'open' AND deleted_at IS NULL").all(id)) deleteRow(db, ctx, 'issue', i.id);
+    deleteRow(db, ctx, 'counterparty', id);
+  })();
+}
+
 export function updatePerson(db: Db, ctx: Ctx, id: string, patch: Row): void {
   const clean: Row = {};
   for (const [k, v] of Object.entries(patch)) {

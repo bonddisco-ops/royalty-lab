@@ -203,6 +203,9 @@ export function saveContract(db: Db, ctx: Ctx, e: ContractEdit): string {
 
 export function deleteContract(db: Db, ctx: Ctx, id: string): void {
   db.transaction(() => {
+    if (Number(db.prepare('SELECT count(*) n FROM payout_period WHERE contract_id = ? AND deleted_at IS NULL').get(id)!.n) > 0) throw new Error('По этому договору уже есть расчёты выплат, удалять его нельзя');
+    // участия больше не ссылаются на удалённый договор
+    for (const p of db.prepare('SELECT id FROM participation WHERE contract_id = ? AND deleted_at IS NULL').all(id)) updateRow(db, ctx, 'participation', p.id, { contract_id: null, appendix_id: null });
     for (const a of db.prepare('SELECT id FROM appendix WHERE contract_id = ? AND deleted_at IS NULL').all(id)) deleteAppendix(db, ctx, a.id);
     deleteRow(db, ctx, 'contract', id);
   })();
