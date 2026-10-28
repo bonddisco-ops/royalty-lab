@@ -167,24 +167,25 @@ test('точная сумма: хвосты копеек не теряются �
   assert.equal(edited[0]!.exactKop, String(edited[0]!.royaltyKop)); // правка → целые копейки
 });
 
-test('«Монтаж»: исходные суммы отчёта против текущих; перенос дальше считается', async () => {
+test('«Монтаж»: разница сумм строк против отчёта, без долей и ставок; перенос дальше считается', async () => {
   const { editLine } = await import('../reports/edits.ts');
   const { queryLines } = await import('../reports/lines.ts');
   const { db } = world({ threshold: 500000 });
-  report(db, '2026Q2', 1000); // 100000 коп × 0,5 × 0,7 × 0,94 = 32900
+  report(db, '2026Q2', 1000);
   let q = computeQuarter(db, '2026Q2');
   assert.equal(q.montage!.montageKop, 0);
-  assert.equal(q.montage!.origKop, 32900);
+  assert.equal(q.montage!.origKop, 100000);
   assert.equal(q.carry.people, 1);
   assert.equal(q.carry.kop, 32900); // порог 500 000 ₽ — всё переносится
   editLine(db, ctx, queryLines(db, { quarter: '2026Q2' }).rows[0]!.lineId, 'royalty', '800');
   q = computeQuarter(db, '2026Q2');
-  assert.equal(q.montage!.origKop, 32900);
-  assert.ok(q.montage!.nowKop < 32900);
-  assert.equal(q.montage!.montageKop, 32900 - q.montage!.nowKop);
+  assert.equal(q.montage!.origKop, 100000);
+  assert.equal(q.montage!.nowKop, 80000);
+  assert.equal(q.montage!.montageKop, 20000); // вся разница, не доля артиста
   assert.equal(q.montage!.rows.length, 1);
   assert.equal(q.totals.flowRoyaltyKop, 100000); // приход лейбла — как в отчёте дистрибьютора
-  assert.equal(q.totals.marginKop, 100000 - q.totals.accruedKop); // разница («Монтаж») остаётся лейблу
+  assert.equal(q.groups[0]!.accruedKop, Math.floor(80000 * 0.5 * 0.7 * 0.94)); // артист получает от 800, а не от 1000
+  assert.equal(q.totals.marginKop, 100000 - q.totals.accruedKop); // разница («Монтаж») осталась лейблу
 });
 
 test('владелец лейбла: из выплат исключён, его сумма показана отдельно, в «Монтаж» не входит', () => {

@@ -75,8 +75,8 @@ export interface GroupCalc {
   artists: Array<{ artistId: string; name: string; rows: number; royaltyKop: number }>;
 }
 
-/** «Монтаж»: на сколько правки строк уменьшили выплаты людям по сравнению с исходными отчётами дистрибьюторов. */
-export interface MontageRow { payeeId: string; name: string; origKop: number; nowKop: number; montageKop: number; isOwner: boolean }
+/** «Монтаж»: на сколько правки в «Строках» уменьшили суммы строк против исходных отчётов дистрибьюторов. Без долей и ставок: эти деньги целиком остаются лейблу. */
+export interface MontageRow { trackId: string | null; title: string; artist: string; origKop: number; nowKop: number; montageKop: number }
 export interface Montage { origKop: number; nowKop: number; montageKop: number; rows: MontageRow[] }
 
 export interface QuarterCalc {
@@ -315,19 +315,21 @@ export function computeQuarter(db: Db, quarter: string, mode: RoundMode = 'down'
   const ownerAccrued = ownerId ? allRaw.filter((g) => g.payeeId === ownerId).reduce((a, g) => a + roundDiv(g.scaled, SCALE4, mode), 0) : 0;
   let montage: Montage | null = null;
   if (depth === 0) {
-    const was = accruedByPayee(orig!.rows, mode);
-    const now = accruedByPayee(rows, mode);
-    const mrows: MontageRow[] = [];
-    for (const id of new Set([...was.keys(), ...now.keys()])) {
-      const o = was.get(id) ?? 0, n = now.get(id) ?? 0;
-      if (o === n) continue;
-      mrows.push({ payeeId: id, name: nameOf(id), origKop: o, nowKop: n, montageKop: o - n, isOwner: !!ownerId && id === ownerId });
+    const artistReports = new Set(db.prepare("SELECT id FROM report WHERE quarter = ? AND deleted_at IS NULL AND current_version_id IS NOT NULL AND flow = 'artists'").all(quarter).map((r) => String(r.id)));
+    const byTrack = new Map<string, MontageRow>();
+    let origAll = 0, nowAll = 0;
+    for (const l of filteredLines(db, { quarter }) as LineRow[]) {
+      if (!artistReports.has(l.reportId)) continue;
+      origAll += l.origRoyaltyKop;
+      nowAll += l.royaltyKop;
+      if (l.origRoyaltyKop === l.royaltyKop) continue;
+      const k = l.trackId ?? `raw:${l.title ?? ''}|${l.artist ?? ''}`;
+      const e = byTrack.get(k) ?? { trackId: l.trackId, title: l.trackTitle ?? l.title ?? '(без названия)', artist: l.artist ?? '', origKop: 0, nowKop: 0, montageKop: 0 };
+      e.origKop += l.origRoyaltyKop; e.nowKop += l.royaltyKop; e.montageKop = e.origKop - e.nowKop;
+      byTrack.set(k, e);
     }
-    mrows.sort((x, y) => Math.abs(y.montageKop) - Math.abs(x.montageKop));
-    const counted = mrows.filter((r) => !r.isOwner);
-    const origAll = [...was].filter(([id]) => id !== ownerId).reduce((a, [, v]) => a + v, 0);
-    const nowAll = [...now].filter(([id]) => id !== ownerId).reduce((a, [, v]) => a + v, 0);
-    montage = { origKop: origAll, nowKop: nowAll, montageKop: counted.reduce((a, r) => a + r.montageKop, 0), rows: mrows };
+    const mrows = [...byTrack.values()].filter((r) => r.montageKop !== 0).sort((x, y) => Math.abs(y.montageKop) - Math.abs(x.montageKop));
+    montage = { origKop: origAll, nowKop: nowAll, montageKop: origAll - nowAll, rows: mrows };
   }
   const held = groups.filter((g) => g.carriedOutKop > 0);
   return {

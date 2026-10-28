@@ -63,7 +63,7 @@ export function Payouts({ onChanged }: { onChanged: () => void }) {
               <div className="n" style={{ fontSize: 20 }}>{fmtKop(view.calc.carry.kop)}</div><div className="l">Переносится дальше · {view.calc.carry.people} чел.{onlyHeld ? ' (показаны только они)' : ''}</div>
             </div>
             {view.calc.montage && (
-              <div className="card click" style={showMontage ? { borderColor: 'var(--accent)' } : undefined} onClick={() => setShowMontage(!showMontage)} title="На сколько правки строк уменьшили выплаты людям по сравнению с исходными отчётами. Эти деньги остаются лейблу. Клик — разбивка по людям">
+              <div className="card click" style={showMontage ? { borderColor: 'var(--accent)' } : undefined} onClick={() => setShowMontage(!showMontage)} title="На сколько правки в «Строках» уменьшили суммы против исходных отчётов. Без долей и ставок, эти деньги остаются лейблу. Клик — разбивка по трекам">
                 <div className="n" style={{ fontSize: 20 }}>{fmtKop(view.calc.montage.montageKop)}</div><div className="l">Монтаж: было {fmtKop(view.calc.montage.origKop)} → стало {fmtKop(view.calc.montage.nowKop)}</div>
               </div>
             )}
@@ -78,12 +78,12 @@ export function Payouts({ onChanged }: { onChanged: () => void }) {
           </div>
           {showMontage && view.calc.montage && (
             <div className="card" style={{ marginBottom: 12 }}>
-              <b>Монтаж по людям</b> <span className="dim">· сколько выплаты стали меньше исходных; эти деньги остались лейблу</span>
-              {view.calc.montage.rows.length === 0 && <div className="dim">Правок, меняющих выплаты, нет.</div>}
+              <b>Монтаж по трекам</b> <span className="dim">· на сколько правки в «Строках» уменьшили суммы против отчётов дистрибьюторов; эти деньги целиком остались лейблу</span>
+              {view.calc.montage.rows.length === 0 && <div className="dim">Правок, меняющих суммы строк, нет.</div>}
               {view.calc.montage.rows.length > 0 && (
-                <table><thead><tr><th>Человек</th><th style={{ textAlign: 'right' }}>Было</th><th style={{ textAlign: 'right' }}>Стало</th><th style={{ textAlign: 'right' }}>Монтаж</th></tr></thead>
-                  <tbody>{view.calc.montage.rows.map((m) => (
-                    <tr key={m.payeeId} className={m.isOwner ? 'dim' : undefined}><td>{m.name}{m.isOwner && ' (владелец, в итог не входит)'}</td><td style={{ textAlign: 'right' }}>{fmtKop(m.origKop)}</td><td style={{ textAlign: 'right' }}>{fmtKop(m.nowKop)}</td><td style={{ textAlign: 'right' }}><b>{fmtKop(m.montageKop)}</b></td></tr>))}</tbody>
+                <table><thead><tr><th>Трек</th><th>Артист в отчёте</th><th style={{ textAlign: 'right' }}>Было</th><th style={{ textAlign: 'right' }}>Стало</th><th style={{ textAlign: 'right' }}>Монтаж</th></tr></thead>
+                  <tbody>{view.calc.montage.rows.map((m, i) => (
+                    <tr key={(m.trackId ?? '') + i}><td>{m.title}</td><td>{m.artist}</td><td style={{ textAlign: 'right' }}>{fmtKop(m.origKop)}</td><td style={{ textAlign: 'right' }}>{fmtKop(m.nowKop)}</td><td style={{ textAlign: 'right' }}><b>{fmtKop(m.montageKop)}</b></td></tr>))}</tbody>
                 </table>
               )}
             </div>
