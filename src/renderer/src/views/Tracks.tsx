@@ -3,6 +3,7 @@ import type { ArtistListItem, TrackView } from '../../../shared/api.ts';
 import { call } from '../api.ts';
 import { Avatar } from '../Avatar.tsx';
 import { PhotoEditor } from '../PhotoEditor.tsx';
+import { CoverImport } from '../CoverImport.tsx';
 import { ContractLink } from '../ContractViewer.tsx';
 import { useNav } from '../nav.tsx';
 import { SearchSelect } from '../SearchSelect.tsx';
@@ -96,6 +97,7 @@ export function Tracks({ onChanged }: { onChanged: () => void }) {
   const [rows, setRows] = useState<TrackView[]>([]);
   const [artists, setArtists] = useState<ArtistListItem[]>([]);
   const [adding, setAdding] = useState(false);
+  const [covers, setCovers] = useState(false);
   const [title, setTitle] = useState('');
   const [isrc, setIsrc] = useState('');
   const [err, setErr] = useState('');
@@ -147,8 +149,10 @@ export function Tracks({ onChanged }: { onChanged: () => void }) {
         <label className="row"><input type="checkbox" style={{ width: 'auto' }} checked={onlyProblems} onChange={(e) => setOnlyProblems(e.target.checked)} />только с проблемами</label>
         <div className="grow" />
         <span className="dim">{rows.length}</span>
+        <button onClick={() => setCovers(true)}>Загрузить обложки из папки</button>
         <button onClick={() => setAdding(!adding)}>+ Трек</button>
       </div>
+      {covers && <CoverImport onClose={(ch) => { setCovers(false); if (ch) reload(); }} />}
       {adding && (
         <div className="card" style={{ marginBottom: 12 }}>
           <div className="grid2"><label className="f">Название<input value={title} onChange={(e) => setTitle(e.target.value)} /></label><label className="f">ISRC (необязательно)<input value={isrc} onChange={(e) => setIsrc(e.target.value)} /></label></div>

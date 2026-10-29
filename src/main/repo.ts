@@ -291,6 +291,7 @@ export interface TrackView {
   title: string;
   isrc: string | null;
   cover: string | null;
+  version: string | null;
   codes: string[];
   participants: ParticipantView[];
   /** Доли по людям: несколько артистов одного человека сложены вместе. */
@@ -303,7 +304,7 @@ export interface TrackView {
 
 export function listTracks(db: Db, q = '', onlyProblems = false): TrackView[] {
   const needle = normKey(q);
-  const tracks = db.prepare('SELECT id, title, isrc, cover_file FROM track WHERE deleted_at IS NULL ORDER BY title').all();
+  const tracks = db.prepare('SELECT id, title, isrc, version, cover_file FROM track WHERE deleted_at IS NULL ORDER BY title').all();
   const codes = db.prepare("SELECT track_id, value_norm FROM track_identifier WHERE kind = 'distributor_code' AND deleted_at IS NULL").all();
   const parts = db.prepare(
     `SELECT p.*, a.name AS artist_name, c.number AS contract_number, ap.number AS appendix_number, pc.last_name AS payee_last, pc.first_name AS payee_first
@@ -331,7 +332,7 @@ export function listTracks(db: Db, q = '', onlyProblems = false): TrackView[] {
     const sa = sumDec(ps.map((p) => p.share_authors));
     const sr = sumDec(ps.map((p) => p.share_related));
     const view: TrackView = {
-      id: t.id, title: t.title, isrc: t.isrc, cover: t.cover_file ?? null, codes: tc,
+      id: t.id, title: t.title, isrc: t.isrc, cover: t.cover_file ?? null, version: t.version ?? null, codes: tc,
       participants: ps.map((p) => ({
         id: p.id, artistId: p.artist_id, artist: p.artist_name, shareAuthors: p.share_authors, shareRelated: p.share_related,
         labelRate: p.label_rate, payeeCounterpartyId: p.payee_counterparty_id,
