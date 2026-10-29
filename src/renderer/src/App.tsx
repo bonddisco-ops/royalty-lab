@@ -19,8 +19,9 @@ import { ContractViewerProvider } from './ContractViewer.tsx';
 import { NavContext, type NavParams, type Tab } from './nav.tsx';
 import { THEMES, applyTheme, savedTheme } from './themes.ts';
 import { Settings } from './views/Settings.tsx';
+import { Export } from './views/Export.tsx';
 
-const TABS: Array<[Tab, string]> = [['home', 'Главная'], ['tracks', 'Треки'], ['people', 'Люди'], ['artists', 'Артисты'], ['reports', 'Отчёты'], ['lines', 'Строки'], ['payouts', 'Выплаты'], ['contracts', 'Договоры'], ['issues', 'Проверить'], ['tax', 'Налоги'], ['settings', 'Настройки']];
+const TABS: Array<[Tab, string]> = [['home', 'Главная'], ['tracks', 'Треки'], ['people', 'Люди'], ['artists', 'Артисты'], ['reports', 'Отчёты'], ['lines', 'Строки'], ['payouts', 'Выплаты'], ['contracts', 'Договоры'], ['issues', 'Проверить'], ['tax', 'Налоги'], ['export', 'Экспорт'], ['settings', 'Настройки']];
 
 export function App() {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
@@ -76,6 +77,7 @@ export function App() {
         {tab === 'contracts' && <Contracts onChanged={refresh} />}
         {tab === 'issues' && <Issues onChanged={refresh} />}
         {tab === 'tax' && <Tax />}
+        {tab === 'export' && <Export />}
         {tab === 'settings' && <Settings auth={auth} onChanged={refresh} />}
       </ErrorBoundary></main>
     </div>

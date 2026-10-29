@@ -11,6 +11,7 @@ import type { GroupCalc, Problem, QuarterCalc } from '../main/payouts/calc.ts';
 import type { PayoutRow, PayoutsView, StatementInfo } from '../main/payouts/store.ts';
 import type { PaymentItem, TaxView } from '../main/tax/store.ts';
 import type { TaxParams } from '../main/tax/calc.ts';
+import type { TreePerson } from '../main/export/catalog.ts';
 import type { OpeningItem, OpeningListItem, OpeningMatch, OpeningParsedRow } from '../main/payouts/opening.ts';
 import type { VersionItem } from '../main/reports/replace.ts';
 import type { BatchItem, BulkAction, BulkPlan } from '../main/reports/bulk.ts';
@@ -22,7 +23,7 @@ import type { UpdatePreview } from '../main/sync/exchange.ts';
 import type { Facets, LineFilter, LineHistory, LinePage, LineRow, LineSort } from '../main/reports/lines.ts';
 
 export type { UpdatePreview };
-export type { PendingTrack, AppendixDraft, AppendixListItem, ContractDetail, ContractEdit, ContractListItem, ContractPreview, DraftTrack, ExportRequest, Block, PBlock, Seg, FieldDef };
+export type { TreePerson, PendingTrack, AppendixDraft, AppendixListItem, ContractDetail, ContractEdit, ContractListItem, ContractPreview, DraftTrack, ExportRequest, Block, PBlock, Seg, FieldDef };
 export type { GroupCalc, Problem, QuarterCalc, PayoutRow, PayoutsView, StatementInfo };
 export type { LineHistory, VersionItem, BatchItem, BulkAction, BulkPlan, UiField, Facets, LineFilter, LinePage, LineRow, LineSort, StreamKind };
 export type { ImportPreview, CustomField, CustomMapping, QuarterPanel, ReportListItem, Flow };
@@ -190,6 +191,9 @@ export interface ChannelMap {
   'people:get': [{ id: string; reveal?: boolean }, PersonDetail];
   'people:create': [Row, string];
   'people:addArtist': [{ personId: string; artistId?: string; name?: string }, string];
+  'catalog:tree': [void, TreePerson[]];
+  'catalog:preview': [{ artistIds: string[] }, { people: Array<{ personId: string; name: string; projects: string[]; tracks: number; missing: string[] }>; unassigned: string[] }];
+  'catalog:export': [{ artistIds: string[] }, { path: string; people: number; tracks: number }];
   'people:setOwner': [{ id: string; owner: boolean }, void];
   'people:update': [{ id: string; patch: Row }, void];
   'artists:list': [{ q?: string }, ArtistListItem[]];

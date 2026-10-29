@@ -13,6 +13,7 @@ import { uuidv7 } from './domain/ids.ts';
 import { dataPaths, ensureDataDirs, type DataPaths } from './paths.ts';
 import { readPhoto, removePhoto, savePhoto } from './photos.ts';
 import * as repo from './repo.ts';
+import { catalogPeople, catalogTree, exportCatalog } from './export/catalog.ts';
 import { registerReportsIpc } from './ipcReports.ts';
 import { registerContractsIpc } from './ipcContracts.ts';
 import { registerSyncIpc } from './ipcSync.ts';
@@ -235,6 +236,12 @@ export function registerIpc(profileDir: string, getWindow: () => BrowserWindow |
   handle('people:get', ({ id, reveal }) => repo.getPerson(db(), id, !!reveal));
   handle('people:create', (data) => repo.createPerson(db(), ctx(), data));
   handle('people:addArtist', ({ personId, artistId, name }) => repo.addArtistToPerson(db(), ctx(), personId, { artistId, name }));
+  handle('catalog:tree', () => catalogTree(db()));
+  handle('catalog:preview', ({ artistIds }) => {
+    const r = catalogPeople(db(), artistIds);
+    return { people: r.people.map((p) => ({ personId: p.personId, name: p.name, projects: p.projects, tracks: p.tracks.length, missing: p.missing })), unassigned: r.unassigned };
+  });
+  handle('catalog:export', ({ artistIds }) => exportCatalog(db(), requireSession().paths.output, artistIds));
   handle('people:setOwner', ({ id, owner }) => repo.setOwner(db(), ctx(), id, owner));
   handle('people:update', ({ id, patch }) => repo.updatePerson(db(), ctx(), id, patch));
   handle('artists:list', ({ q }) => repo.listArtists(db(), q));
