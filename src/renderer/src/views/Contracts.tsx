@@ -181,7 +181,7 @@ function Editor({ detail, onClose }: { detail: ContractDetail; onClose: () => vo
             <button disabled={busy} className="primary" onClick={() => void doExport('pdf', 'contract')}>Создать PDF</button>
           </div>
           {err && <div className="err" style={{ whiteSpace: 'pre-wrap' }}>{err}</div>}
-          {info && <div className="okmsg">{info}{opened && info.startsWith('Готово') && <button className="link" onClick={() => void call('payouts:open', { path: opened })}>Открыть файл</button>}</div>}
+          {info && <div className="okmsg">{info}{opened && info.startsWith('Готово') && <button className="link" onClick={() => void call('payouts:open', { path: opened })}>Открыть файл</button> <button className="link" onClick={() => void call('payouts:reveal', { path: opened })}>Показать в папке</button>}</div>}
           {pv && pv.errors.length > 0 && <div className="err">{pv.errors.map((x, i) => <div key={i}>{x}</div>)}</div>}
           {missing.length > 0 && <div className="warn">В карточке человека не хватает: {missing.join(', ')}. В договоре они пока «____». <span className="dim">Заполните в «Люди» и откройте договор заново.</span></div>}
           <div className="ctr">
@@ -249,7 +249,7 @@ function Editor({ detail, onClose }: { detail: ContractDetail; onClose: () => vo
                     <span className="dim">Договор вместе с приложением № 1:</span>
                     <button onClick={() => void (async () => { try { const r = await call('contracts:export', { req: { contractId: edit.id!, format: 'docx', part: 'both', appendixId: apps[0]!.id }, edit: null, draft: null }); setInfo(`Готово: ${r.path}`); setOpened(r.path); } catch (e) { setErr((e as Error).message); } })()}>Word</button>
                     <button onClick={() => void (async () => { try { const r = await call('contracts:export', { req: { contractId: edit.id!, format: 'pdf', part: 'both', appendixId: apps[0]!.id }, edit: null, draft: null }); setInfo(`Готово: ${r.path}`); setOpened(r.path); } catch (e) { setErr((e as Error).message); } })()}>PDF</button>
-                    {info.startsWith('Готово') && <button className="link" onClick={() => void call('payouts:open', { path: opened })}>Открыть файл</button>}
+                    {info.startsWith('Готово') && <button className="link" onClick={() => void call('payouts:open', { path: opened })}>Открыть файл</button> <button className="link" onClick={() => void call('payouts:reveal', { path: opened })}>Показать в папке</button>}
                   </div>
                 )}
                 {err && <div className="err">{err}</div>}
@@ -371,7 +371,7 @@ function AppendixEditor({ contractId, appendixId, onlyTracks, number, onBack }: 
         <label className="f" style={{ width: 160 }}>Дата<input type="date" value={d.date} onChange={(e) => upd((x) => ({ ...x, date: e.target.value }))} /></label>
       </div>
       {err && <div className="err" style={{ whiteSpace: 'pre-wrap' }}>{err}</div>}
-      {info && <div className="okmsg">{info}{opened && info.startsWith('Готово') && <button className="link" onClick={() => void call('payouts:open', { path: opened })}>Открыть файл</button>}</div>}
+      {info && <div className="okmsg">{info}{opened && info.startsWith('Готово') && <button className="link" onClick={() => void call('payouts:open', { path: opened })}>Открыть файл</button> <button className="link" onClick={() => void call('payouts:reveal', { path: opened })}>Показать в папке</button>}</div>}
       {incomplete > 0 && <div className="warn">В {incomplete} строках не заполнены авторы, изготовитель, доли или ставка (пустые поля подсвечены). Введённое запоминается на трек и подставится в следующих приложениях.</div>}
       <h3>1. Произведения, Исполнения, Фонограммы</h3>
       <Grid rows={d.tracks.map((t) => t.row)} cols={TRACK_COLS} onChange={(i, k, v) => upd((x) => ({ ...x, tracks: x.tracks.map((t, j) => (j === i ? { ...t, row: { ...t.row, [k]: v } } : t)) }))} onRemove={(i) => upd((x) => ({ ...x, tracks: x.tracks.filter((_, j) => j !== i) }))} />

@@ -151,6 +151,7 @@ export interface ChannelMap {
   'opening:update': [{ id: string; artistId?: string | null; kop?: number }, void];
   'opening:delete': [{ id: string }, void];
   'payouts:open': [{ path: string }, void];
+  'payouts:reveal': [{ path: string }, void];
   'contracts:list': [void, ContractListItem[]];
   'contracts:missing': [void, Array<{ id: string; person: string; status: string }>];
   'contracts:fields': [void, FieldDef[]];

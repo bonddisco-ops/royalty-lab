@@ -267,6 +267,14 @@ export function registerReportsIpc(handle: HandleFn, getWindow: () => BrowserWin
     if (err) throw new Error(`Не удалось открыть файл: ${err}`);
   });
 
+  handle('payouts:reveal', ({ path }) => {
+    const s = requireSession();
+    const root = resolve(s.paths.output);
+    const abs = resolve(root, path);
+    if (abs !== root && !abs.startsWith(root + sep)) throw new Error('Файл вне папки данных');
+    shell.showItemInFolder(abs);
+  });
+
   // ------------------------------------------------ мастер незнакомого формата
   handle('wizard:info', ({ id, sheet, headerRow }): WizardInfo => {
     const p = pending.get(id);
