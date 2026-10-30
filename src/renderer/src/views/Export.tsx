@@ -53,7 +53,7 @@ export function Export() {
         <button className="primary" disabled={!pv || pv.people.length === 0} onClick={() => (gaps.length > 0 ? setAsk(true) : void doExport())}>Экспортировать в Excel</button>
       </div>
       {err && <div className="err">{err}</div>}
-      {res && <div className="okmsg">Готово: {res.people} лист(ов), треков в списках: {res.tracks}. Файл: {res.path} <button className="link" onClick={() => void call('payouts:open', { path: res.path })}>Открыть файл</button> <button className="link" onClick={() => void call('payouts:reveal', { path: res.path })}>Показать в папке</button></div>}
+      {res && <div className="okmsg">Готово: {res.people} лист(ов), треков в списках: {res.tracks}. Файл: {res.path} <><button className="link" onClick={() => void call('payouts:open', { path: res.path })}>Открыть файл</button> <button className="link" onClick={() => void call('payouts:reveal', { path: res.path })}>Показать в папке</button></></div>}
       <p className="dim">Файл Excel: один лист на человека. На листе фамилия, имя, отчество, электронная почта, проекты и список треков в виде «Артисты – Название». Если у трека несколько людей, он есть на листе каждого. Снятый артист в файл не попадает.</p>
 
       {pv && (gaps.length > 0 || pv.unassigned.length > 0) && (
